@@ -10,157 +10,131 @@
 
 //! Used by `rustc` when loading a plugin.
 
-use driver::session::Session;
-use metadata::creader::PluginMetadataReader;
+use session::Session;
+use metadata::creader::CrateReader;
 use plugin::registry::Registry;
 
-use std::mem;
-use std::os;
+use std::borrow::ToOwned;
 use std::dynamic_lib::DynamicLibrary;
+use std::env;
+use std::mem;
+use std::path::PathBuf;
 use syntax::ast;
-use syntax::attr;
-use syntax::visit;
-use syntax::visit::Visitor;
-use syntax::ext::expand::ExportedMacros;
+use syntax::codemap::{Span, COMMAND_LINE_SP};
+use syntax::ptr::P;
 use syntax::attr::AttrMetaMethods;
-
-/// Plugin-related crate metadata.
-pub struct PluginMetadata {
-    /// Source code of macros exported by the crate.
-    pub macros: Vec<String>,
-    /// Path to the shared library file.
-    pub lib: Option<Path>,
-    /// Symbol name of the plugin registrar function.
-    pub registrar_symbol: Option<String>,
-}
 
 /// Pointer to a registrar function.
 pub type PluginRegistrarFun =
     fn(&mut Registry);
 
-/// Information about loaded plugins.
-pub struct Plugins {
-    /// Source code of exported macros.
-    pub macros: Vec<ExportedMacros>,
-    /// Registrars, as function pointers.
-    pub registrars: Vec<PluginRegistrarFun>,
+pub struct PluginRegistrar {
+    pub fun: PluginRegistrarFun,
+    pub args: Vec<P<ast::MetaItem>>,
 }
 
 struct PluginLoader<'a> {
     sess: &'a Session,
-    reader: PluginMetadataReader<'a>,
-    plugins: Plugins,
+    reader: CrateReader<'a>,
+    plugins: Vec<PluginRegistrar>,
+}
+
+/// Read plugin metadata and dynamically load registrar functions.
+pub fn load_plugins(sess: &Session, krate: &ast::Crate,
+                    addl_plugins: Option<Vec<String>>) -> Vec<PluginRegistrar> {
+    let mut loader = PluginLoader::new(sess);
+
+    for attr in &krate.attrs {
+        if !attr.check_name("plugin") {
+            continue;
+        }
+
+        let plugins = match attr.meta_item_list() {
+            Some(xs) => xs,
+            None => {
+                sess.span_err(attr.span, "malformed plugin attribute");
+                continue;
+            }
+        };
+
+        for plugin in plugins {
+            if plugin.value_str().is_some() {
+                sess.span_err(attr.span, "malformed plugin attribute");
+                continue;
+            }
+
+            let args = plugin.meta_item_list().map(ToOwned::to_owned).unwrap_or_default();
+            loader.load_plugin(plugin.span, &*plugin.name(), args);
+        }
+    }
+
+    if let Some(plugins) = addl_plugins {
+        for plugin in plugins {
+            loader.load_plugin(COMMAND_LINE_SP, &plugin, vec![]);
+        }
+    }
+
+    loader.plugins
 }
 
 impl<'a> PluginLoader<'a> {
     fn new(sess: &'a Session) -> PluginLoader<'a> {
         PluginLoader {
             sess: sess,
-            reader: PluginMetadataReader::new(sess),
-            plugins: Plugins {
-                macros: vec!(),
-                registrars: vec!(),
-            },
+            reader: CrateReader::new(sess),
+            plugins: vec![],
         }
     }
-}
 
-/// Read plugin metadata and dynamically load registrar functions.
-pub fn load_plugins(sess: &Session, krate: &ast::Crate,
-                    addl_plugins: Option<Plugins>) -> Plugins {
-    let mut loader = PluginLoader::new(sess);
-    visit::walk_crate(&mut loader, krate, ());
+    fn load_plugin(&mut self, span: Span, name: &str, args: Vec<P<ast::MetaItem>>) {
+        let registrar = self.reader.find_plugin_registrar(span, name);
 
-    let mut plugins = loader.plugins;
-
-    match addl_plugins {
-        Some(addl_plugins) => {
-            // Add in the additional plugins requested by the frontend
-            let Plugins { macros: addl_macros, registrars: addl_registrars } = addl_plugins;
-            plugins.macros.push_all_move(addl_macros);
-            plugins.registrars.push_all_move(addl_registrars);
-        }
-        None => ()
-    }
-
-    return plugins;
-}
-
-// note that macros aren't expanded yet, and therefore macros can't add plugins.
-impl<'a> Visitor<()> for PluginLoader<'a> {
-    fn visit_view_item(&mut self, vi: &ast::ViewItem, _: ()) {
-        match vi.node {
-            ast::ViewItemExternCrate(name, _, _) => {
-                let mut plugin_phase = false;
-
-                for attr in vi.attrs.iter().filter(|a| a.check_name("phase")) {
-                    let phases = attr.meta_item_list().unwrap_or(&[]);
-                    if attr::contains_name(phases, "plugin") {
-                        plugin_phase = true;
-                    }
-                    if attr::contains_name(phases, "syntax") {
-                        plugin_phase = true;
-                        self.sess.span_warn(attr.span,
-                            "phase(syntax) is a deprecated synonym for phase(plugin)");
-                    }
-                }
-
-                if !plugin_phase { return; }
-
-                let PluginMetadata { macros, lib, registrar_symbol } =
-                    self.reader.read_plugin_metadata(vi);
-
-                self.plugins.macros.push(ExportedMacros {
-                    crate_name: name,
-                    macros: macros,
-                });
-
-                match (lib, registrar_symbol) {
-                    (Some(lib), Some(symbol))
-                        => self.dylink_registrar(vi, lib, symbol),
-                    _ => (),
-                }
-            }
-            _ => (),
+        if let Some((lib, symbol)) = registrar {
+            let fun = self.dylink_registrar(span, lib, symbol);
+            self.plugins.push(PluginRegistrar {
+                fun: fun,
+                args: args,
+            });
         }
     }
-    fn visit_mac(&mut self, _: &ast::Mac, _:()) {
-        // bummer... can't see plugins inside macros.
-        // do nothing.
-    }
-}
 
-impl<'a> PluginLoader<'a> {
     // Dynamically link a registrar function into the compiler process.
-    fn dylink_registrar(&mut self, vi: &ast::ViewItem, path: Path, symbol: String) {
+    #[allow(deprecated)] // until #23197
+    fn dylink_registrar(&mut self,
+                        span: Span,
+                        path: PathBuf,
+                        symbol: String) -> PluginRegistrarFun {
         // Make sure the path contains a / or the linker will search for it.
-        let path = os::make_absolute(&path);
+        let path = env::current_dir().unwrap().join(&path);
 
         let lib = match DynamicLibrary::open(Some(&path)) {
             Ok(lib) => lib,
             // this is fatal: there are almost certainly macros we need
             // inside this crate, so continue would spew "macro undefined"
             // errors
-            Err(err) => self.sess.span_fatal(vi.span, err.as_slice())
+            Err(err) => {
+                self.sess.span_fatal(span, &err[..])
+            }
         };
 
         unsafe {
             let registrar =
-                match lib.symbol(symbol.as_slice()) {
+                match lib.symbol(&symbol[..]) {
                     Ok(registrar) => {
                         mem::transmute::<*mut u8,PluginRegistrarFun>(registrar)
                     }
                     // again fatal if we can't register macros
-                    Err(err) => self.sess.span_fatal(vi.span, err.as_slice())
+                    Err(err) => {
+                        self.sess.span_fatal(span, &err[..])
+                    }
                 };
-
-            self.plugins.registrars.push(registrar);
 
             // Intentionally leak the dynamic library. We can't ever unload it
             // since the library can make things that will live arbitrarily long
-            // (e.g. an @-box cycle or a task).
+            // (e.g. an @-box cycle or a thread).
             mem::forget(lib);
 
+            registrar
         }
     }
 }

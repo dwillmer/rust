@@ -9,11 +9,11 @@
 // except according to those terms.
 
 
-use std::gc::Gc;
+
 use std::mem;
 
 #[repr(packed)]
-struct S4(u8,[u8, .. 3]);
+struct S4(u8,[u8;  3]);
 
 #[repr(packed)]
 struct S5(u8, u32);
@@ -30,7 +30,7 @@ enum Foo {
 struct S3_Foo(u8, u16, Foo);
 
 #[repr(packed)]
-struct S7_Option(f32, u8, u16, Option<Gc<f64>>);
+struct S7_Option(f32, u8, u16, Option<Box<f64>>);
 
 pub fn main() {
     assert_eq!(mem::size_of::<S4>(), 4);
@@ -43,5 +43,5 @@ pub fn main() {
                3 + mem::size_of::<Foo>());
 
     assert_eq!(mem::size_of::<S7_Option>(),
-              7 + mem::size_of::<Option<Gc<f64>>>());
+              7 + mem::size_of::<Option<Box<f64>>>());
 }

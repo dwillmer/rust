@@ -10,16 +10,9 @@
 
 //! Operations and constants for signed 16-bits integers (`i16` type)
 
-#![unstable]
+#![stable(feature = "rust1", since = "1.0.0")]
 #![doc(primitive = "i16")]
-
-use from_str::FromStr;
-use num::{ToStrRadix, FromStrRadix};
-use num::strconv;
-use option::Option;
-use slice::ImmutableSlice;
-use string::String;
 
 pub use core::i16::{BITS, BYTES, MIN, MAX};
 
-int_module!(i16)
+int_module! { i16 }

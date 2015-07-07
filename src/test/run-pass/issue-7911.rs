@@ -14,9 +14,9 @@
 // with different mutability in macro in two methods
 
 #![allow(unused_variable)] // unused foobar_immut + foobar_mut
-#![feature(macro_rules)]
-
-trait FooBar {}
+trait FooBar {
+    fn dummy(&self) { }
+}
 struct Bar(i32);
 struct Foo { bar: Bar }
 
@@ -27,7 +27,7 @@ trait Test {
     fn get_mut(&mut self) -> &mut FooBar;
 }
 
-macro_rules! generate_test(($type_:path, $slf:ident, $field:expr) => (
+macro_rules! generate_test { ($type_:path, $slf:ident, $field:expr) => (
     impl Test for $type_ {
         fn get_immut(&$slf) -> &FooBar {
             &$field as &FooBar
@@ -37,9 +37,9 @@ macro_rules! generate_test(($type_:path, $slf:ident, $field:expr) => (
             &mut $field as &mut FooBar
         }
     }
-))
+)}
 
-generate_test!(Foo, self, self.bar)
+generate_test!(Foo, self, self.bar);
 
 pub fn main() {
     let mut foo: Foo = Foo { bar: Bar(42) };

@@ -8,46 +8,38 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$1 = false
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$2 = false
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$3 = 10
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$4 = 10
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$5 = 10.5
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$6 = 10
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$7 = false
 // gdb-command:continue
@@ -85,6 +77,9 @@
 // lldb-check:[...]$6 = false
 // lldb-command:continue
 
+
+#![omit_gdb_pretty_printer_section]
+
 fn main() {
     let x = false;
 
@@ -95,7 +90,7 @@ fn main() {
         zzz(); // #break
         sentinel();
 
-        let x = 10i;
+        let x = 10;
 
         zzz(); // #break
         sentinel();

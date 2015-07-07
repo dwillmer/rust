@@ -8,14 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate debug;
-
 fn main() {
     let foo = 100;
 
+    #[derive(Debug)]
     enum Stuff {
-        Bar = foo //~ ERROR attempt to use a non-constant value in a constant
+        Bar = foo
+        //~^ ERROR attempt to use a non-constant value in a constant
+        //~| ERROR unresolved name `foo`
     }
 
-    println!("{:?}", Bar);
+    println!("{}", Stuff::Bar);
 }

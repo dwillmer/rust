@@ -8,11 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(struct_variant)]
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
-use std::task;
+use std::thread;
+use std::sync::mpsc::{channel, Sender};
 
-#[deriving(PartialEq, Show)]
+#[derive(PartialEq, Debug)]
 enum Message {
     Dropped,
     DestructorRan
@@ -24,27 +26,27 @@ struct SendOnDrop {
 
 impl Drop for SendOnDrop {
     fn drop(&mut self) {
-        self.sender.send(Dropped);
+        self.sender.send(Message::Dropped).unwrap();
     }
 }
 
 enum Foo {
     SimpleVariant(Sender<Message>),
-    NestedVariant(Box<uint>, SendOnDrop, Sender<Message>),
+    NestedVariant(Box<usize>, SendOnDrop, Sender<Message>),
     FailingVariant { on_drop: SendOnDrop }
 }
 
 impl Drop for Foo {
     fn drop(&mut self) {
         match self {
-            &SimpleVariant(ref mut sender) => {
-                sender.send(DestructorRan);
+            &mut Foo::SimpleVariant(ref mut sender) => {
+                sender.send(Message::DestructorRan).unwrap();
             }
-            &NestedVariant(_, _, ref mut sender) => {
-                sender.send(DestructorRan);
+            &mut Foo::NestedVariant(_, _, ref mut sender) => {
+                sender.send(Message::DestructorRan).unwrap();
             }
-            &FailingVariant { .. } => {
-                fail!("Failed");
+            &mut Foo::FailingVariant { .. } => {
+                panic!("Failed");
             }
         }
     }
@@ -53,42 +55,46 @@ impl Drop for Foo {
 pub fn main() {
     let (sender, receiver) = channel();
     {
-        let v = SimpleVariant(sender);
+        let v = Foo::SimpleVariant(sender);
     }
-    assert_eq!(receiver.recv(), DestructorRan);
-    assert_eq!(receiver.recv_opt().ok(), None);
+    assert_eq!(receiver.recv().unwrap(), Message::DestructorRan);
+    assert_eq!(receiver.recv().ok(), None);
 
     let (sender, receiver) = channel();
     {
-        let v = NestedVariant(box 42u, SendOnDrop { sender: sender.clone() }, sender);
+        let v = Foo::NestedVariant(box 42, SendOnDrop { sender: sender.clone() }, sender);
     }
-    assert_eq!(receiver.recv(), DestructorRan);
-    assert_eq!(receiver.recv(), Dropped);
-    assert_eq!(receiver.recv_opt().ok(), None);
+    assert_eq!(receiver.recv().unwrap(), Message::DestructorRan);
+    assert_eq!(receiver.recv().unwrap(), Message::Dropped);
+    assert_eq!(receiver.recv().ok(), None);
 
     let (sender, receiver) = channel();
-    task::spawn(proc() {
-        let v = FailingVariant { on_drop: SendOnDrop { sender: sender } };
+    let t = thread::spawn(move|| {
+        let v = Foo::FailingVariant { on_drop: SendOnDrop { sender: sender } };
     });
-    assert_eq!(receiver.recv(), Dropped);
-    assert_eq!(receiver.recv_opt().ok(), None);
+    assert_eq!(receiver.recv().unwrap(), Message::Dropped);
+    assert_eq!(receiver.recv().ok(), None);
+    drop(t.join());
 
     let (sender, receiver) = channel();
-    {
-        task::spawn(proc() {
-            let mut v = NestedVariant(box 42u, SendOnDrop {
+    let t = {
+        thread::spawn(move|| {
+            let mut v = Foo::NestedVariant(box 42, SendOnDrop {
                 sender: sender.clone()
             }, sender.clone());
-            v = NestedVariant(box 42u, SendOnDrop { sender: sender.clone() }, sender.clone());
-            v = SimpleVariant(sender.clone());
-            v = FailingVariant { on_drop: SendOnDrop { sender: sender } };
-        });
-    }
-    assert_eq!(receiver.recv(), DestructorRan);
-    assert_eq!(receiver.recv(), Dropped);
-    assert_eq!(receiver.recv(), DestructorRan);
-    assert_eq!(receiver.recv(), Dropped);
-    assert_eq!(receiver.recv(), DestructorRan);
-    assert_eq!(receiver.recv(), Dropped);
-    assert_eq!(receiver.recv_opt().ok(), None);
+            v = Foo::NestedVariant(box 42,
+                                   SendOnDrop { sender: sender.clone() },
+                                   sender.clone());
+            v = Foo::SimpleVariant(sender.clone());
+            v = Foo::FailingVariant { on_drop: SendOnDrop { sender: sender } };
+        })
+    };
+    assert_eq!(receiver.recv().unwrap(), Message::DestructorRan);
+    assert_eq!(receiver.recv().unwrap(), Message::Dropped);
+    assert_eq!(receiver.recv().unwrap(), Message::DestructorRan);
+    assert_eq!(receiver.recv().unwrap(), Message::Dropped);
+    assert_eq!(receiver.recv().unwrap(), Message::DestructorRan);
+    assert_eq!(receiver.recv().unwrap(), Message::Dropped);
+    assert_eq!(receiver.recv().ok(), None);
+    drop(t.join());
 }

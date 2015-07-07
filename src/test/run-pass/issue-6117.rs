@@ -8,14 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
-use std::gc::GC;
+// pretty-expanded FIXME #23616
 
 enum Either<T, U> { Left(T), Right(U) }
 
 pub fn main() {
-    match Left(box(GC) 17i) {
-        Right(()) => {}
+    match Either::Left(Box::new(17)) {
+        Either::Right(()) => {}
         _ => {}
     }
 }

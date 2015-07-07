@@ -8,7 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
+
 fn main() {
     box ( () ) 0;
-    //~^ ERROR: only the managed heap and exchange heap are currently supported
+    //~^ ERROR: only the exchange heap is currently supported
 }

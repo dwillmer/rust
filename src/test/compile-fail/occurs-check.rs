@@ -8,10 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
-use std::gc::GC;
+#![feature(box_syntax)]
 
 fn main() {
-    let f; //~ ERROR cyclic type of infinite size
-    f = box(GC) f;
+    let f;
+    f = box f;
+    //~^ ERROR mismatched types
+    //~| expected `_`
+    //~| found `Box<_>`
+    //~| cyclic type of infinite size
 }

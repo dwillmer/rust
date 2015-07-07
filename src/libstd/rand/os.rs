@@ -1,4 +1,4 @@
-// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013-2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -13,82 +13,201 @@
 
 pub use self::imp::OsRng;
 
-#[cfg(unix, not(target_os = "ios"))]
+#[cfg(all(unix, not(target_os = "ios")))]
 mod imp {
-    use io::{IoResult, File};
-    use path::Path;
+    use prelude::v1::*;
+    use self::OsRngInner::*;
+
+    use fs::File;
+    use io;
+    use libc;
+    use mem;
     use rand::Rng;
     use rand::reader::ReaderRng;
-    use result::{Ok, Err};
+    use sys::os::errno;
+
+    #[cfg(all(target_os = "linux",
+              any(target_arch = "x86_64",
+                  target_arch = "x86",
+                  target_arch = "arm",
+                  target_arch = "aarch64",
+                  target_arch = "powerpc")))]
+    fn getrandom(buf: &mut [u8]) -> libc::c_long {
+        extern "C" {
+            fn syscall(number: libc::c_long, ...) -> libc::c_long;
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        const NR_GETRANDOM: libc::c_long = 318;
+        #[cfg(target_arch = "x86")]
+        const NR_GETRANDOM: libc::c_long = 355;
+        #[cfg(any(target_arch = "arm", target_arch = "aarch64", target_arch = "powerpc"))]
+        const NR_GETRANDOM: libc::c_long = 384;
+
+        unsafe {
+            syscall(NR_GETRANDOM, buf.as_mut_ptr(), buf.len(), 0)
+        }
+    }
+
+    #[cfg(not(all(target_os = "linux",
+                  any(target_arch = "x86_64",
+                      target_arch = "x86",
+                      target_arch = "arm",
+                      target_arch = "aarch64",
+                      target_arch = "powerpc"))))]
+    fn getrandom(_buf: &mut [u8]) -> libc::c_long { -1 }
+
+    fn getrandom_fill_bytes(v: &mut [u8]) {
+        let mut read = 0;
+        let len = v.len();
+        while read < len {
+            let result = getrandom(&mut v[read..]);
+            if result == -1 {
+                let err = errno() as libc::c_int;
+                if err == libc::EINTR {
+                    continue;
+                } else {
+                    panic!("unexpected getrandom error: {}", err);
+                }
+            } else {
+                read += result as usize;
+            }
+        }
+    }
+
+    fn getrandom_next_u32() -> u32 {
+        let mut buf: [u8; 4] = [0; 4];
+        getrandom_fill_bytes(&mut buf);
+        unsafe { mem::transmute::<[u8; 4], u32>(buf) }
+    }
+
+    fn getrandom_next_u64() -> u64 {
+        let mut buf: [u8; 8] = [0; 8];
+        getrandom_fill_bytes(&mut buf);
+        unsafe { mem::transmute::<[u8; 8], u64>(buf) }
+    }
+
+    #[cfg(all(target_os = "linux",
+              any(target_arch = "x86_64",
+                  target_arch = "x86",
+                  target_arch = "arm",
+                  target_arch = "aarch64",
+                  target_arch = "powerpc")))]
+    fn is_getrandom_available() -> bool {
+        use sync::atomic::{AtomicBool, Ordering};
+        use sync::Once;
+
+        static CHECKER: Once = Once::new();
+        static AVAILABLE: AtomicBool = AtomicBool::new(false);
+
+        CHECKER.call_once(|| {
+            let mut buf: [u8; 0] = [];
+            let result = getrandom(&mut buf);
+            let available = if result == -1 {
+                let err = io::Error::last_os_error().raw_os_error();
+                err != Some(libc::ENOSYS)
+            } else {
+                true
+            };
+            AVAILABLE.store(available, Ordering::Relaxed);
+        });
+
+        AVAILABLE.load(Ordering::Relaxed)
+    }
+
+    #[cfg(not(all(target_os = "linux",
+                  any(target_arch = "x86_64",
+                      target_arch = "x86",
+                      target_arch = "arm",
+                      target_arch = "aarch64",
+                      target_arch = "powerpc"))))]
+    fn is_getrandom_available() -> bool { false }
 
     /// A random number generator that retrieves randomness straight from
     /// the operating system. Platform sources:
     ///
     /// - Unix-like systems (Linux, Android, Mac OSX): read directly from
-    ///   `/dev/urandom`.
+    ///   `/dev/urandom`, or from `getrandom(2)` system call if available.
     /// - Windows: calls `CryptGenRandom`, using the default cryptographic
     ///   service provider with the `PROV_RSA_FULL` type.
-    /// - iOS: calls SecRandomCopyBytes as /dev/(u)random is sandboxed
+    /// - iOS: calls SecRandomCopyBytes as /dev/(u)random is sandboxed.
+    ///
     /// This does not block.
-    #[cfg(unix)]
     pub struct OsRng {
-        inner: ReaderRng<File>
+        inner: OsRngInner,
+    }
+
+    enum OsRngInner {
+        OsGetrandomRng,
+        OsReaderRng(ReaderRng<File>),
     }
 
     impl OsRng {
         /// Create a new `OsRng`.
-        pub fn new() -> IoResult<OsRng> {
-            let reader = try!(File::open(&Path::new("/dev/urandom")));
+        pub fn new() -> io::Result<OsRng> {
+            if is_getrandom_available() {
+                return Ok(OsRng { inner: OsGetrandomRng });
+            }
+
+            let reader = try!(File::open("/dev/urandom"));
             let reader_rng = ReaderRng::new(reader);
 
-            Ok(OsRng { inner: reader_rng })
+            Ok(OsRng { inner: OsReaderRng(reader_rng) })
         }
     }
 
     impl Rng for OsRng {
         fn next_u32(&mut self) -> u32 {
-            self.inner.next_u32()
+            match self.inner {
+                OsGetrandomRng => getrandom_next_u32(),
+                OsReaderRng(ref mut rng) => rng.next_u32(),
+            }
         }
         fn next_u64(&mut self) -> u64 {
-            self.inner.next_u64()
+            match self.inner {
+                OsGetrandomRng => getrandom_next_u64(),
+                OsReaderRng(ref mut rng) => rng.next_u64(),
+            }
         }
         fn fill_bytes(&mut self, v: &mut [u8]) {
-            self.inner.fill_bytes(v)
+            match self.inner {
+                OsGetrandomRng => getrandom_fill_bytes(v),
+                OsReaderRng(ref mut rng) => rng.fill_bytes(v)
+            }
         }
     }
 }
 
 #[cfg(target_os = "ios")]
 mod imp {
-    extern crate libc;
+    use prelude::v1::*;
 
-    use collections::Collection;
-    use io::{IoResult};
-    use kinds::marker;
+    use io;
     use mem;
-    use os;
     use rand::Rng;
-    use result::{Ok};
-    use self::libc::{c_int, size_t};
-    use slice::MutableSlice;
+    use libc::{c_int, size_t};
 
     /// A random number generator that retrieves randomness straight from
     /// the operating system. Platform sources:
     ///
     /// - Unix-like systems (Linux, Android, Mac OSX): read directly from
-    ///   `/dev/urandom`.
+    ///   `/dev/urandom`, or from `getrandom(2)` system call if available.
     /// - Windows: calls `CryptGenRandom`, using the default cryptographic
     ///   service provider with the `PROV_RSA_FULL` type.
-    /// - iOS: calls SecRandomCopyBytes as /dev/(u)random is sandboxed
+    /// - iOS: calls SecRandomCopyBytes as /dev/(u)random is sandboxed.
+    ///
     /// This does not block.
     pub struct OsRng {
-        marker: marker::NoCopy
+        // dummy field to ensure that this struct cannot be constructed outside
+        // of this module
+        _dummy: (),
     }
 
     #[repr(C)]
     struct SecRandom;
 
-    static kSecRandomDefault: *const SecRandom = 0 as *const SecRandom;
+    #[allow(non_upper_case_globals)]
+    const kSecRandomDefault: *const SecRandom = 0 as *const SecRandom;
 
     #[link(name = "Security", kind = "framework")]
     extern "C" {
@@ -98,28 +217,30 @@ mod imp {
 
     impl OsRng {
         /// Create a new `OsRng`.
-        pub fn new() -> IoResult<OsRng> {
-            Ok(OsRng {marker: marker::NoCopy} )
+        pub fn new() -> io::Result<OsRng> {
+            Ok(OsRng { _dummy: () })
         }
     }
 
     impl Rng for OsRng {
         fn next_u32(&mut self) -> u32 {
-            let mut v = [0u8, .. 4];
-            self.fill_bytes(v);
+            let mut v = [0; 4];
+            self.fill_bytes(&mut v);
             unsafe { mem::transmute(v) }
         }
         fn next_u64(&mut self) -> u64 {
-            let mut v = [0u8, .. 8];
-            self.fill_bytes(v);
+            let mut v = [0; 8];
+            self.fill_bytes(&mut v);
             unsafe { mem::transmute(v) }
         }
         fn fill_bytes(&mut self, v: &mut [u8]) {
             let ret = unsafe {
-                SecRandomCopyBytes(kSecRandomDefault, v.len() as size_t, v.as_mut_ptr())
+                SecRandomCopyBytes(kSecRandomDefault, v.len() as size_t,
+                                   v.as_mut_ptr())
             };
             if ret == -1 {
-                fail!("couldn't generate random bytes: {}", os::last_os_error());
+                panic!("couldn't generate random bytes: {}",
+                       io::Error::last_os_error());
             }
         }
     }
@@ -127,19 +248,13 @@ mod imp {
 
 #[cfg(windows)]
 mod imp {
-    extern crate libc;
+    use prelude::v1::*;
 
-    use core_collections::Collection;
-    use io::{IoResult, IoError};
+    use io;
     use mem;
-    use ops::Drop;
-    use os;
     use rand::Rng;
-    use result::{Ok, Err};
-    use rt::stack;
-    use self::libc::{DWORD, BYTE, LPCSTR, BOOL};
-    use self::libc::types::os::arch::extra::{LONG_PTR};
-    use slice::MutableSlice;
+    use libc::types::os::arch::extra::{LONG_PTR};
+    use libc::{DWORD, BYTE, LPCSTR, BOOL};
 
     type HCRYPTPROV = LONG_PTR;
 
@@ -147,21 +262,22 @@ mod imp {
     /// the operating system. Platform sources:
     ///
     /// - Unix-like systems (Linux, Android, Mac OSX): read directly from
-    ///   `/dev/urandom`.
+    ///   `/dev/urandom`, or from `getrandom(2)` system call if available.
     /// - Windows: calls `CryptGenRandom`, using the default cryptographic
     ///   service provider with the `PROV_RSA_FULL` type.
+    /// - iOS: calls SecRandomCopyBytes as /dev/(u)random is sandboxed.
     ///
     /// This does not block.
     pub struct OsRng {
         hcryptprov: HCRYPTPROV
     }
 
-    static PROV_RSA_FULL: DWORD = 1;
-    static CRYPT_SILENT: DWORD = 64;
-    static CRYPT_VERIFYCONTEXT: DWORD = 0xF0000000;
-    static NTE_BAD_SIGNATURE: DWORD = 0x80090006;
+    const PROV_RSA_FULL: DWORD = 1;
+    const CRYPT_SILENT: DWORD = 64;
+    const CRYPT_VERIFYCONTEXT: DWORD = 0xF0000000;
 
     #[allow(non_snake_case)]
+    #[link(name = "advapi32")]
     extern "system" {
         fn CryptAcquireContextA(phProv: *mut HCRYPTPROV,
                                 pszContainer: LPCSTR,
@@ -176,52 +292,16 @@ mod imp {
 
     impl OsRng {
         /// Create a new `OsRng`.
-        pub fn new() -> IoResult<OsRng> {
+        pub fn new() -> io::Result<OsRng> {
             let mut hcp = 0;
-            let mut ret = unsafe {
+            let ret = unsafe {
                 CryptAcquireContextA(&mut hcp, 0 as LPCSTR, 0 as LPCSTR,
                                      PROV_RSA_FULL,
                                      CRYPT_VERIFYCONTEXT | CRYPT_SILENT)
             };
 
-            // FIXME #13259:
-            // It turns out that if we can't acquire a context with the
-            // NTE_BAD_SIGNATURE error code, the documentation states:
-            //
-            //     The provider DLL signature could not be verified. Either the
-            //     DLL or the digital signature has been tampered with.
-            //
-            // Sounds fishy, no? As it turns out, our signature can be bad
-            // because our Thread Information Block (TIB) isn't exactly what it
-            // expects. As to why, I have no idea. The only data we store in the
-            // TIB is the stack limit for each thread, but apparently that's
-            // enough to make the signature valid.
-            //
-            // Furthermore, this error only happens the *first* time we call
-            // CryptAcquireContext, so we don't have to worry about future
-            // calls.
-            //
-            // Anyway, the fix employed here is that if we see this error, we
-            // pray that we're not close to the end of the stack, temporarily
-            // set the stack limit to 0 (what the TIB originally was), acquire a
-            // context, and then reset the stack limit.
-            //
-            // Again, I'm not sure why this is the fix, nor why we're getting
-            // this error. All I can say is that this seems to allow libnative
-            // to progress where it otherwise would be hindered. Who knew?
-            if ret == 0 && os::errno() as DWORD == NTE_BAD_SIGNATURE {
-                unsafe {
-                    let limit = stack::get_sp_limit();
-                    stack::record_sp_limit(0);
-                    ret = CryptAcquireContextA(&mut hcp, 0 as LPCSTR, 0 as LPCSTR,
-                                               PROV_RSA_FULL,
-                                               CRYPT_VERIFYCONTEXT | CRYPT_SILENT);
-                    stack::record_sp_limit(limit);
-                }
-            }
-
             if ret == 0 {
-                Err(IoError::last_error())
+                Err(io::Error::last_os_error())
             } else {
                 Ok(OsRng { hcryptprov: hcp })
             }
@@ -230,13 +310,13 @@ mod imp {
 
     impl Rng for OsRng {
         fn next_u32(&mut self) -> u32 {
-            let mut v = [0u8, .. 4];
-            self.fill_bytes(v);
+            let mut v = [0; 4];
+            self.fill_bytes(&mut v);
             unsafe { mem::transmute(v) }
         }
         fn next_u64(&mut self) -> u64 {
-            let mut v = [0u8, .. 8];
-            self.fill_bytes(v);
+            let mut v = [0; 8];
+            self.fill_bytes(&mut v);
             unsafe { mem::transmute(v) }
         }
         fn fill_bytes(&mut self, v: &mut [u8]) {
@@ -245,7 +325,8 @@ mod imp {
                                v.as_mut_ptr())
             };
             if ret == 0 {
-                fail!("couldn't generate random bytes: {}", os::last_os_error());
+                panic!("couldn't generate random bytes: {}",
+                       io::Error::last_os_error());
             }
         }
     }
@@ -256,19 +337,21 @@ mod imp {
                 CryptReleaseContext(self.hcryptprov, 0)
             };
             if ret == 0 {
-                fail!("couldn't release context: {}", os::last_os_error());
+                panic!("couldn't release context: {}",
+                       io::Error::last_os_error());
             }
         }
     }
 }
 
 #[cfg(test)]
-mod test {
-    use prelude::*;
+mod tests {
+    use prelude::v1::*;
 
-    use super::OsRng;
+    use sync::mpsc::channel;
     use rand::Rng;
-    use task;
+    use super::OsRng;
+    use thread;
 
     #[test]
     fn test_os_rng() {
@@ -277,41 +360,42 @@ mod test {
         r.next_u32();
         r.next_u64();
 
-        let mut v = [0u8, .. 1000];
-        r.fill_bytes(v);
+        let mut v = [0; 1000];
+        r.fill_bytes(&mut v);
     }
 
     #[test]
     fn test_os_rng_tasks() {
 
         let mut txs = vec!();
-        for _ in range(0u, 20) {
+        for _ in 0..20 {
             let (tx, rx) = channel();
             txs.push(tx);
-            task::spawn(proc() {
-                // wait until all the tasks are ready to go.
-                rx.recv();
+
+            thread::spawn(move|| {
+                // wait until all the threads are ready to go.
+                rx.recv().unwrap();
 
                 // deschedule to attempt to interleave things as much
                 // as possible (XXX: is this a good test?)
                 let mut r = OsRng::new().unwrap();
-                task::deschedule();
-                let mut v = [0u8, .. 1000];
+                thread::yield_now();
+                let mut v = [0; 1000];
 
-                for _ in range(0u, 100) {
+                for _ in 0..100 {
                     r.next_u32();
-                    task::deschedule();
+                    thread::yield_now();
                     r.next_u64();
-                    task::deschedule();
-                    r.fill_bytes(v);
-                    task::deschedule();
+                    thread::yield_now();
+                    r.fill_bytes(&mut v);
+                    thread::yield_now();
                 }
-            })
+            });
         }
 
-        // start all the tasks
-        for tx in txs.iter() {
-            tx.send(())
+        // start all the threads
+        for tx in &txs {
+            tx.send(()).unwrap();
         }
     }
 }

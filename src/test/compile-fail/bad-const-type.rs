@@ -8,7 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// error-pattern:expected `collections::string::String`, found `int`
-
-static i: String = 10i;
+static i: String = 10;
+//~^ ERROR mismatched types
+//~| expected `collections::string::String`
+//~| found `_`
+//~| expected struct `collections::string::String`
+//~| found integral variable
 fn main() { println!("{}", i); }

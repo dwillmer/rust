@@ -14,7 +14,8 @@
 // that the main function can read the variable too while
 // the closures are in scope. Issue #6801.
 
-fn a() -> int {
+
+fn a() -> i32 {
     let mut x = 3;
     x += 1;
     let c1 = || x * 4;
@@ -22,11 +23,11 @@ fn a() -> int {
     c1() * c2() * x
 }
 
-fn get(x: &int) -> int {
+fn get(x: &i32) -> i32 {
     *x * 4
 }
 
-fn b() -> int {
+fn b() -> i32 {
     let mut x = 3;
     x += 1;
     let c1 = || get(&x);
@@ -34,7 +35,7 @@ fn b() -> int {
     c1() * c2() * x
 }
 
-fn c() -> int {
+fn c() -> i32 {
     let mut x = 3;
     x += 1;
     let c1 = || x * 5;

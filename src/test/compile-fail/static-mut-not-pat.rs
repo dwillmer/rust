@@ -12,15 +12,15 @@
 // statics cannot. This ensures that there's some form of error if this is
 // attempted.
 
-static mut a: int = 3;
+static mut a: isize = 3;
 
 fn main() {
     // If they can't be matched against, then it's possible to capture the same
     // name as a variable, hence this should be an unreachable pattern situation
     // instead of spitting out a custom error about some identifier collisions
     // (we should allow shadowing)
-    match 4i {
-        a => {} //~ ERROR mutable static variables cannot be referenced in a pattern
+    match 4 {
+        a => {} //~ ERROR static variables cannot be referenced in a pattern
         _ => {}
     }
 }
@@ -32,22 +32,22 @@ enum Direction {
     South,
     West
 }
-static NEW_FALSE: NewBool = NewBool(false);
+const NEW_FALSE: NewBool = NewBool(false);
 struct Foo {
     bar: Option<Direction>,
     baz: NewBool
 }
 
-static mut STATIC_MUT_FOO: Foo = Foo { bar: Some(West), baz: NEW_FALSE };
+static mut STATIC_MUT_FOO: Foo = Foo { bar: Some(Direction::West), baz: NEW_FALSE };
 
 fn mutable_statics() {
-    match (Foo { bar: Some(North), baz: NewBool(true) }) {
+    match (Foo { bar: Some(Direction::North), baz: NewBool(true) }) {
         Foo { bar: None, baz: NewBool(true) } => (),
         STATIC_MUT_FOO => (),
-        //~^ ERROR mutable static variables cannot be referenced in a pattern
-        Foo { bar: Some(South), .. } => (),
+        //~^ ERROR static variables cannot be referenced in a pattern
+        Foo { bar: Some(Direction::South), .. } => (),
         Foo { bar: Some(EAST), .. } => (),
-        Foo { bar: Some(North), baz: NewBool(true) } => (),
+        Foo { bar: Some(Direction::North), baz: NewBool(true) } => (),
         Foo { bar: Some(EAST), baz: NewBool(false) } => ()
     }
 }

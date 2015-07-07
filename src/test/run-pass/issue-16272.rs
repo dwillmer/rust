@@ -8,38 +8,24 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(phase)]
-#[phase(plugin)]
-extern crate green;
-extern crate native;
+// ignore-aarch64
 
-use native::NativeTaskBuilder;
-use std::io::{process, Command};
-use std::os;
-use std::task::TaskBuilder;
-
-green_start!(main)
+use std::process::Command;
+use std::env;
 
 fn main() {
-    let len = os::args().len();
+    let len = env::args().len();
 
     if len == 1 {
         test();
-        let (tx, rx) = channel();
-        TaskBuilder::new().native().spawn(proc() {
-            tx.send(test());
-        });
-        rx.recv();
     } else {
         assert_eq!(len, 3);
     }
 }
 
 fn test() {
-    let status = Command::new(os::self_exe_name().unwrap())
+    let status = Command::new(&env::current_exe().unwrap())
                          .arg("foo").arg("")
-                         .stdout(process::InheritFd(1))
-                         .stderr(process::InheritFd(2))
                          .status().unwrap();
     assert!(status.success());
 }

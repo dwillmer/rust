@@ -8,13 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::rc::Rc;
 
-use std::gc::GC;
-
-fn f<T:Send>(_i: T) {
+fn f<T:Send>(__isize: T) {
 }
 
 fn main() {
-    let i = box box(GC) 100i;
-    f(i); //~ ERROR does not fulfill `Send`
+    // FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
+    let i = Box::new(Rc::new(100));
+    f(i);
+    //~^ ERROR `core::marker::Send` is not implemented
 }

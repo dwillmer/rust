@@ -8,53 +8,51 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+
+#![feature(libc, std_misc)]
+
 extern crate libc;
-use std::c_str::CString;
+
+use std::ffi::{CStr, CString};
 use libc::{c_char, c_int};
 
-// ignore-fast doesn't like extern crate
 
 extern {
     fn sprintf(s: *mut c_char, format: *const c_char, ...) -> c_int;
 }
 
-unsafe fn check<T>(expected: &str, f: |*mut c_char| -> T) {
-    let mut x = [0i8, ..50];
+unsafe fn check<T, F>(expected: &str, f: F) where F: FnOnce(*mut c_char) -> T {
+    let mut x = [0 as c_char; 50];
     f(&mut x[0] as *mut c_char);
-    let res = CString::new(&x[0], false);
-    assert_eq!(expected, res.as_str().unwrap());
+    assert_eq!(expected.as_bytes(), CStr::from_ptr(x.as_ptr()).to_bytes());
 }
 
 pub fn main() {
 
     unsafe {
         // Call with just the named parameter
-        "Hello World\n".with_c_str(|c| {
-            check("Hello World\n", |s| sprintf(s, c));
-        });
+        let c = CString::new(&b"Hello World\n"[..]).unwrap();
+        check("Hello World\n", |s| sprintf(s, c.as_ptr()));
 
         // Call with variable number of arguments
-        "%d %f %c %s\n".with_c_str(|c| {
-            check("42 42.500000 a %d %f %c %s\n\n", |s| {
-                sprintf(s, c, 42i, 42.5f64, 'a' as c_int, c);
-            })
+        let c = CString::new(&b"%d %f %c %s\n"[..]).unwrap();
+        check("42 42.500000 a %d %f %c %s\n\n", |s| {
+            sprintf(s, c.as_ptr(), 42, 42.5f64, 'a' as c_int, c.as_ptr());
         });
 
         // Make a function pointer
-        let x: unsafe extern "C" fn(*mut c_char, *const c_char, ...) -> c_int = sprintf;
+        let x: unsafe extern fn(*mut c_char, *const c_char, ...) -> c_int = sprintf;
 
         // A function that takes a function pointer
-        unsafe fn call(p: unsafe extern "C" fn(*mut c_char, *const c_char, ...) -> c_int) {
-            // Call with just the named parameter via fn pointer
-            "Hello World\n".with_c_str(|c| {
-                check("Hello World\n", |s| p(s, c));
-            });
+        unsafe fn call(p: unsafe extern fn(*mut c_char, *const c_char, ...) -> c_int) {
+            // Call with just the named parameter
+            let c = CString::new(&b"Hello World\n"[..]).unwrap();
+            check("Hello World\n", |s| sprintf(s, c.as_ptr()));
 
             // Call with variable number of arguments
-            "%d %f %c %s\n".with_c_str(|c| {
-                check("42 42.500000 a %d %f %c %s\n\n", |s| {
-                    p(s, c, 42i, 42.5f64, 'a' as c_int, c);
-                })
+            let c = CString::new(&b"%d %f %c %s\n"[..]).unwrap();
+            check("42 42.500000 a %d %f %c %s\n\n", |s| {
+                sprintf(s, c.as_ptr(), 42, 42.5f64, 'a' as c_int, c.as_ptr());
             });
         }
 

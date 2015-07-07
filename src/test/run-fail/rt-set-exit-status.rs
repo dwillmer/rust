@@ -10,13 +10,14 @@
 
 // error-pattern:whatever
 
-#![feature(phase)]
-#[phase(plugin, link)] extern crate log;
-use std::os;
+#![feature(rustc_private, exit_status)]
+
+#[macro_use] extern crate log;
+use std::env;
 
 fn main() {
     error!("whatever");
-    // 101 is the code the runtime uses on task failure and the value
+    // 101 is the code the runtime uses on thread panic and the value
     // compiletest expects run-fail tests to return.
-    os::set_exit_status(101);
+    env::set_exit_status(101);
 }

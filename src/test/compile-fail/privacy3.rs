@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(globs)]
+#![feature(start, no_std)]
 #![no_std] // makes debugging this test *a lot* easier (during resolve)
 
 // Test to make sure that private items imported through globs remain private
@@ -30,4 +30,4 @@ fn test1() {
     gpriv();
 }
 
-#[start] fn main(_: int, _: *const *const u8) -> int { 3 }
+#[start] fn main(_: isize, _: *const *const u8) -> isize { 3 }

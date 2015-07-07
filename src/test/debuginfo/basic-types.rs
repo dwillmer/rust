@@ -14,15 +14,13 @@
 // about UTF-32 character encoding and will print a rust char as only
 // its numerical value.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
-// gdb-command:finish
 // gdb-command:print b
 // gdb-check:$1 = false
 // gdb-command:print i
@@ -62,7 +60,7 @@
 // lldb-check:[...]$1 = -1
 
 // NOTE: LLDB does not support 32bit chars
-// d ebugger:print (uint)(c)
+// d ebugger:print (usize)(c)
 // c heck:$3 = 97
 
 // lldb-command:print i8
@@ -88,17 +86,18 @@
 // lldb-command:print f64
 // lldb-check:[...]$12 = 3.5
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
+#![omit_gdb_pretty_printer_section]
 
 fn main() {
     let b: bool = false;
-    let i: int = -1;
+    let i: isize = -1;
     let c: char = 'a';
     let i8: i8 = 68;
     let i16: i16 = -16;
     let i32: i32 = -32;
     let i64: i64 = -64;
-    let u: uint = 1;
+    let u: usize = 1;
     let u8: u8 = 100;
     let u16: u16 = 16;
     let u32: u32 = 32;

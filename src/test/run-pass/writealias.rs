@@ -9,18 +9,18 @@
 // except according to those terms.
 
 
-struct Point {x: int, y: int, z: int}
+use std::sync::Mutex;
+
+struct Point {x: isize, y: isize, z: isize}
 
 fn f(p: &mut Point) { p.z = 13; }
 
 pub fn main() {
-    unsafe {
-        let x = Some(::std::rt::exclusive::Exclusive::new(true));
-        match x {
-            Some(ref z) if *z.lock() => {
-                assert!(*z.lock());
-            },
-            _ => fail!()
-        }
+    let x = Some(Mutex::new(true));
+    match x {
+        Some(ref z) if *z.lock().unwrap() => {
+            assert!(*z.lock().unwrap());
+        },
+        _ => panic!()
     }
 }

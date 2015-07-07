@@ -8,28 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(unsafe_destructor)]
+#![feature(box_syntax, duration, duration_span, vec_push_all)]
 
-extern crate collections;
-extern crate time;
+use std::env;
+use std::thread;
+use std::time::Duration;
 
-use time::precise_time_s;
-use std::os;
-use std::task;
-use std::vec;
-use std::gc::{Gc, GC};
-
-#[deriving(Clone)]
+#[derive(Clone)]
 enum List<T> {
-    Nil, Cons(T, Gc<List<T>>)
-}
-
-enum UniqueList {
-    ULNil, ULCons(Box<UniqueList>)
+    Nil, Cons(T, Box<List<T>>)
 }
 
 fn main() {
-    let (repeat, depth) = if os::getenv("RUST_BENCH").is_some() {
+    let (repeat, depth) = if env::var_os("RUST_BENCH").is_some() {
         (50, 1000)
     } else {
         (10, 10)
@@ -38,13 +29,14 @@ fn main() {
     run(repeat, depth);
 }
 
-fn run(repeat: int, depth: int) {
-    for _ in range(0, repeat) {
-        println!("starting {:.4f}", precise_time_s());
-        task::try(proc() {
-            recurse_or_fail(depth, None)
+fn run(repeat: isize, depth: isize) {
+    for _ in 0..repeat {
+        let dur = Duration::span(|| {
+            let _ = thread::spawn(move|| {
+                recurse_or_panic(depth, None)
+            }).join();
         });
-        println!("stopping {:.4f}", precise_time_s());
+        println!("iter: {}", dur);
     }
 }
 
@@ -53,58 +45,50 @@ type nillist = List<()>;
 // Filled with things that have to be unwound
 
 struct State {
-    managed: Gc<nillist>,
     unique: Box<nillist>,
-    tuple: (Gc<nillist>, Box<nillist>),
-    vec: Vec<Gc<nillist>>,
+    vec: Vec<Box<nillist>>,
     res: r
 }
 
 struct r {
-  _l: Gc<nillist>,
+  _l: Box<nillist>,
 }
 
-#[unsafe_destructor]
 impl Drop for r {
     fn drop(&mut self) {}
 }
 
-fn r(l: Gc<nillist>) -> r {
+fn r(l: Box<nillist>) -> r {
     r {
         _l: l
     }
 }
 
-fn recurse_or_fail(depth: int, st: Option<State>) {
+fn recurse_or_panic(depth: isize, st: Option<State>) {
     if depth == 0 {
-        println!("unwinding {:.4f}", precise_time_s());
-        fail!();
+        panic!();
     } else {
         let depth = depth - 1;
 
         let st = match st {
-          None => {
-            State {
-                managed: box(GC) Nil,
-                unique: box Nil,
-                tuple: (box(GC) Nil, box Nil),
-                vec: vec!(box(GC) Nil),
-                res: r(box(GC) Nil)
+            None => {
+                State {
+                    unique: box List::Nil,
+                    vec: vec!(box List::Nil),
+                    res: r(box List::Nil)
+                }
             }
-          }
-          Some(st) => {
-            State {
-                managed: box(GC) Cons((), st.managed),
-                unique: box Cons((), box(GC) *st.unique),
-                tuple: (box(GC) Cons((), st.tuple.ref0().clone()),
-                        box Cons((), box(GC) *st.tuple.ref1().clone())),
-                vec: st.vec.clone().append(
-                        &[box(GC) Cons((), *st.vec.last().unwrap())]),
-                res: r(box(GC) Cons((), st.res._l))
+            Some(st) => {
+                let mut v = st.vec.clone();
+                v.push_all(&[box List::Cons((), st.vec.last().unwrap().clone())]);
+                State {
+                    unique: box List::Cons((), box *st.unique),
+                    vec: v,
+                    res: r(box List::Cons((), st.res._l.clone())),
+                }
             }
-          }
         };
 
-        recurse_or_fail(depth, Some(st));
+        recurse_or_panic(depth, Some(st));
     }
 }

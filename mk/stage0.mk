@@ -3,8 +3,11 @@
 $(HBIN0_H_$(CFG_BUILD))/:
 	mkdir -p $@
 
+# On windows these two are the same, so cause a redifinition warning
+ifneq ($(HBIN0_H_$(CFG_BUILD)),$(HLIB0_H_$(CFG_BUILD)))
 $(HLIB0_H_$(CFG_BUILD))/:
 	mkdir -p $@
+endif
 
 $(SNAPSHOT_RUSTC_POST_CLEANUP): \
 		$(S)src/snapshots.txt \
@@ -19,7 +22,7 @@ ifdef CFG_ENABLE_LOCAL_RUST
 else
 	$(Q)$(CFG_PYTHON) $(S)src/etc/get-snapshot.py $(CFG_BUILD) $(SNAPSHOT_FILE)
 endif
-	$(Q)touch $@
+	$(Q)if [ -e "$@" ]; then touch "$@"; else echo "ERROR: snapshot $@ not found"; exit 1; fi
 
 # For other targets, let the host build the target:
 

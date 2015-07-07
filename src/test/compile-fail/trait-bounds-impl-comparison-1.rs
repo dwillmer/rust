@@ -11,7 +11,9 @@
 // Make sure rustc checks the type parameter bounds in implementations of traits,
 // see #2687
 
-trait A {}
+use std::marker;
+
+trait A { }
 
 trait B: A {}
 
@@ -29,18 +31,18 @@ trait Foo {
     fn test_error8_fn<T: B>(&self);
 }
 
-impl Foo for int {
+impl Foo for isize {
     // invalid bound for T, was defined as Eq in trait
     fn test_error1_fn<T: Ord>(&self) {}
-    //~^ ERROR in method `test_error1_fn`, type parameter 0 requires bound `core::cmp::Ord`
+    //~^ ERROR the requirement `T : core::cmp::Ord` appears on the impl
 
     // invalid bound for T, was defined as Eq + Ord in trait
     fn test_error2_fn<T: Eq + B>(&self) {}
-    //~^ ERROR in method `test_error2_fn`, type parameter 0 requires bound `B`
+    //~^ ERROR the requirement `T : B` appears on the impl
 
     // invalid bound for T, was defined as Eq + Ord in trait
     fn test_error3_fn<T: B + Eq>(&self) {}
-    //~^ ERROR in method `test_error3_fn`, type parameter 0 requires bound `B`
+    //~^ ERROR the requirement `T : B` appears on the impl
 
     // multiple bounds, same order as in trait
     fn test3_fn<T: Ord + Eq>(&self) {}
@@ -50,29 +52,29 @@ impl Foo for int {
 
     // parameters in impls must be equal or more general than in the defining trait
     fn test_error5_fn<T: B>(&self) {}
-    //~^ ERROR in method `test_error5_fn`, type parameter 0 requires bound `B`
+    //~^ ERROR the requirement `T : B` appears on the impl
 
     // bound `std::cmp::Eq` not enforced by this implementation, but this is OK
     fn test6_fn<T: A>(&self) {}
 
     fn test_error7_fn<T: A + Eq>(&self) {}
-    //~^ ERROR in method `test_error7_fn`, type parameter 0 requires bound `core::cmp::Eq`
+    //~^ ERROR the requirement `T : core::cmp::Eq` appears on the impl
 
     fn test_error8_fn<T: C>(&self) {}
-    //~^ ERROR in method `test_error8_fn`, type parameter 0 requires bound `C`
+    //~^ ERROR the requirement `T : C` appears on the impl
 }
 
-
-trait Getter<T> { }
+trait Getter<T> {
+    fn get(&self) -> T { loop { } }
+}
 
 trait Trait {
-    fn method<G:Getter<int>>();
+    fn method<G:Getter<isize>>(&self);
 }
 
-impl Trait for uint {
-    fn method<G: Getter<uint>>() {}
-    //~^ ERROR in method `method`, type parameter 0 requires bound `Getter<uint>`
+impl Trait for usize {
+    fn method<G: Getter<usize>>(&self) {}
+    //~^ G : Getter<usize>` appears on the impl method but not on the corresponding trait method
 }
 
 fn main() {}
-

@@ -8,15 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
-// gdb-command:finish
 
 // gdb-command:print constant
 // gdb-check:$1 = 1
@@ -24,7 +22,11 @@
 // gdb-check:$2 = {a = -2, b = 3.5, c = 4}
 // gdb-command:print *owned
 // gdb-check:$3 = 5
+// gdb-command:continue
 
+// gdb-command:print constant2
+// gdb-check:$4 = 6
+// gdb-command:continue
 
 // === LLDB TESTS ==================================================================================
 
@@ -37,12 +39,14 @@
 // lldb-command:print *owned
 // lldb-check:[...]$2 = 5
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
+#![feature(unboxed_closures, box_syntax)]
+#![omit_gdb_pretty_printer_section]
 
 struct Struct {
-    a: int,
+    a: isize,
     b: f64,
-    c: uint
+    c: usize
 }
 
 fn main() {
@@ -54,17 +58,29 @@ fn main() {
         c: 4
     };
 
-    let owned = box 5;
+    let owned: Box<_> = box 5;
 
-    let closure: proc() = proc() {
+    let closure = move || {
         zzz(); // #break
         do_something(&constant, &a_struct.a, &*owned);
     };
 
     closure();
+
+    let constant2 = 6_usize;
+
+    // The `self` argument of the following closure should be passed by value
+    // to FnOnce::call_once(self, args), which gets translated a bit differently
+    // than the regular case. Let's make sure this is supported too.
+    let immedate_env = move || {
+        zzz(); // #break
+        return constant2;
+    };
+
+    immedate_env();
 }
 
-fn do_something(_: &int, _:&int, _:&int) {
+fn do_something(_: &isize, _:&isize, _:&isize) {
 
 }
 

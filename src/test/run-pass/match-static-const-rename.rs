@@ -16,26 +16,27 @@
 // around this problem locally by renaming the constant in the `use`
 // form to an uppercase identifier that placates the lint.
 
-#![deny(non_uppercase_statics)]
 
-pub static A : int = 97;
+#![deny(non_upper_case_globals)]
+
+pub const A : isize = 97;
 
 fn f() {
     let r = match (0,0) {
         (0, A) => 0,
         (x, y) => 1 + x + y,
     };
-    assert!(r == 1);
+    assert_eq!(r, 1);
     let r = match (0,97) {
         (0, A) => 0,
         (x, y) => 1 + x + y,
     };
-    assert!(r == 0);
+    assert_eq!(r, 0);
 }
 
 mod m {
-    #[allow(non_uppercase_statics)]
-    pub static aha : int = 7;
+    #[allow(non_upper_case_globals)]
+    pub const aha : isize = 7;
 }
 
 fn g() {
@@ -44,12 +45,12 @@ fn g() {
         (0, AHA) => 0,
         (x, y)   => 1 + x + y,
     };
-    assert!(r == 1);
+    assert_eq!(r, 1);
     let r = match (0,7) {
         (0, AHA) => 0,
         (x, y)   => 1 + x + y,
     };
-    assert!(r == 0);
+    assert_eq!(r, 0);
 }
 
 fn h() {
@@ -57,12 +58,12 @@ fn h() {
         (0, self::m::aha) => 0,
         (x, y)      => 1 + x + y,
     };
-    assert!(r == 1);
+    assert_eq!(r, 1);
     let r = match (0,7) {
         (0, self::m::aha) => 0,
         (x, y)      => 1 + x + y,
     };
-    assert!(r == 0);
+    assert_eq!(r, 0);
 }
 
 pub fn main () {

@@ -1,4 +1,4 @@
-// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -7,62 +7,67 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
+pub use self::MaybeTyped::*;
 
-use rustc;
-use rustc::{driver, middle};
+use rustc_lint;
+use rustc_driver::driver;
+use rustc::session::{self, config};
 use rustc::middle::{privacy, ty};
+use rustc::ast_map;
 use rustc::lint;
-use rustc::back::link;
+use rustc_trans::back::link;
+use rustc_resolve as resolve;
 
-use syntax::ast;
-use syntax::parse::token;
-use syntax;
+use syntax::{ast, codemap, diagnostic};
+use syntax::feature_gate::UnstableFeatures;
 
-use std::cell::RefCell;
-use std::gc::GC;
-use std::os;
+use std::cell::{RefCell, Cell};
 use std::collections::{HashMap, HashSet};
 
 use visit_ast::RustdocVisitor;
 use clean;
 use clean::Clean;
 
+pub use rustc::session::config::Input;
+pub use rustc::session::search_paths::SearchPaths;
+
 /// Are we generating documentation (`Typed`) or tests (`NotTyped`)?
-pub enum MaybeTyped {
-    Typed(middle::ty::ctxt),
-    NotTyped(driver::session::Session)
+pub enum MaybeTyped<'a, 'tcx: 'a> {
+    Typed(&'a ty::ctxt<'tcx>),
+    NotTyped(session::Session)
 }
 
 pub type ExternalPaths = RefCell<Option<HashMap<ast::DefId,
                                                 (Vec<String>, clean::TypeKind)>>>;
 
-pub struct DocContext {
-    pub krate: ast::Crate,
-    pub maybe_typed: MaybeTyped,
-    pub src: Path,
+pub struct DocContext<'a, 'tcx: 'a> {
+    pub krate: &'tcx ast::Crate,
+    pub maybe_typed: MaybeTyped<'a, 'tcx>,
+    pub input: Input,
     pub external_paths: ExternalPaths,
     pub external_traits: RefCell<Option<HashMap<ast::DefId, clean::Trait>>>,
     pub external_typarams: RefCell<Option<HashMap<ast::DefId, String>>>,
     pub inlined: RefCell<Option<HashSet<ast::DefId>>>,
     pub populated_crate_impls: RefCell<HashSet<ast::CrateNum>>,
+    pub deref_trait_did: Cell<Option<ast::DefId>>,
 }
 
-impl DocContext {
-    pub fn sess<'a>(&'a self) -> &'a driver::session::Session {
+impl<'b, 'tcx> DocContext<'b, 'tcx> {
+    pub fn sess<'a>(&'a self) -> &'a session::Session {
         match self.maybe_typed {
-            Typed(ref tcx) => &tcx.sess,
+            Typed(tcx) => &tcx.sess,
             NotTyped(ref sess) => sess
         }
     }
 
-    pub fn tcx_opt<'a>(&'a self) -> Option<&'a ty::ctxt> {
+    pub fn tcx_opt<'a>(&'a self) -> Option<&'a ty::ctxt<'tcx>> {
         match self.maybe_typed {
-            Typed(ref tcx) => Some(tcx),
+            Typed(tcx) => Some(tcx),
             NotTyped(_) => None
         }
     }
 
-    pub fn tcx<'a>(&'a self) -> &'a ty::ctxt {
+    pub fn tcx<'a>(&'a self) -> &'a ty::ctxt<'tcx> {
         let tcx_opt = self.tcx_opt();
         tcx_opt.expect("tcx not present")
     }
@@ -72,107 +77,105 @@ pub struct CrateAnalysis {
     pub exported_items: privacy::ExportedItems,
     pub public_items: privacy::PublicItems,
     pub external_paths: ExternalPaths,
-    pub external_traits: RefCell<Option<HashMap<ast::DefId, clean::Trait>>>,
     pub external_typarams: RefCell<Option<HashMap<ast::DefId, String>>>,
     pub inlined: RefCell<Option<HashSet<ast::DefId>>>,
+    pub deref_trait_did: Option<ast::DefId>,
 }
 
 pub type Externs = HashMap<String, Vec<String>>;
 
-/// Parses, resolves, and typechecks the given crate
-fn get_ast_and_resolve(cpath: &Path, libs: HashSet<Path>, cfgs: Vec<String>,
-                       externs: Externs, triple: Option<String>)
-                       -> (DocContext, CrateAnalysis) {
-    use syntax::codemap::dummy_spanned;
-    use rustc::driver::driver::{FileInput,
-                                phase_1_parse_input,
-                                phase_2_configure_and_expand,
-                                phase_3_run_analysis_passes};
-    use rustc::driver::config::build_configuration;
+pub fn run_core(search_paths: SearchPaths, cfgs: Vec<String>, externs: Externs,
+                input: Input, triple: Option<String>)
+                -> (clean::Crate, CrateAnalysis) {
 
-    let input = FileInput(cpath.clone());
+    // Parse, resolve, and typecheck the given crate.
+
+    let cpath = match input {
+        Input::File(ref p) => Some(p.clone()),
+        _ => None
+    };
 
     let warning_lint = lint::builtin::WARNINGS.name_lower();
 
-    let sessopts = driver::config::Options {
-        maybe_sysroot: Some(os::self_exe_path().unwrap().dir_path()),
-        addl_lib_search_paths: RefCell::new(libs),
-        crate_types: vec!(driver::config::CrateTypeRlib),
+    let sessopts = config::Options {
+        maybe_sysroot: None,
+        search_paths: search_paths,
+        crate_types: vec!(config::CrateTypeRlib),
         lint_opts: vec!((warning_lint, lint::Allow)),
         externs: externs,
-        target_triple: triple.unwrap_or(driver::driver::host_triple().to_string()),
-        ..rustc::driver::config::basic_options().clone()
+        target_triple: triple.unwrap_or(config::host_triple().to_string()),
+        cfg: config::parse_cfgspecs(cfgs),
+        // Ensure that rustdoc works even if rustc is feature-staged
+        unstable_features: UnstableFeatures::Allow,
+        ..config::basic_options().clone()
     };
 
-
-    let codemap = syntax::codemap::CodeMap::new();
-    let diagnostic_handler = syntax::diagnostic::default_handler(syntax::diagnostic::Auto, None);
+    let codemap = codemap::CodeMap::new();
+    let diagnostic_handler = diagnostic::Handler::new(diagnostic::Auto, None, true);
     let span_diagnostic_handler =
-        syntax::diagnostic::mk_span_handler(diagnostic_handler, codemap);
+        diagnostic::SpanHandler::new(diagnostic_handler, codemap);
 
-    let sess = driver::session::build_session_(sessopts,
-                                               Some(cpath.clone()),
-                                               span_diagnostic_handler);
+    let sess = session::build_session_(sessopts, cpath,
+                                       span_diagnostic_handler);
+    rustc_lint::register_builtins(&mut sess.lint_store.borrow_mut(), Some(&sess));
 
-    let mut cfg = build_configuration(&sess);
-    for cfg_ in cfgs.move_iter() {
-        let cfg_ = token::intern_and_get_ident(cfg_.as_slice());
-        cfg.push(box(GC) dummy_spanned(ast::MetaWord(cfg_)));
-    }
+    let cfg = config::build_configuration(&sess);
 
-    let krate = phase_1_parse_input(&sess, cfg, &input);
+    let krate = driver::phase_1_parse_input(&sess, cfg, &input);
 
-    let name = link::find_crate_name(Some(&sess), krate.attrs.as_slice(),
+    let name = link::find_crate_name(Some(&sess), &krate.attrs,
                                      &input);
 
-    let (krate, ast_map)
-        = phase_2_configure_and_expand(&sess, krate, name.as_slice(), None)
-            .expect("phase_2_configure_and_expand aborted in rustdoc!");
+    let krate = driver::phase_2_configure_and_expand(&sess, krate, &name, None)
+                    .expect("phase_2_configure_and_expand aborted in rustdoc!");
 
-    let driver::driver::CrateAnalysis {
-        exported_items, public_items, ty_cx, ..
-    } = phase_3_run_analysis_passes(sess, &krate, ast_map, name);
+    let mut forest = ast_map::Forest::new(krate);
+    let arenas = ty::CtxtArenas::new();
+    let ast_map = driver::assign_node_ids_and_map(&sess, &mut forest);
 
-    debug!("crate: {:?}", krate);
-    (DocContext {
-        krate: krate,
-        maybe_typed: Typed(ty_cx),
-        src: cpath.clone(),
-        external_traits: RefCell::new(Some(HashMap::new())),
-        external_typarams: RefCell::new(Some(HashMap::new())),
-        external_paths: RefCell::new(Some(HashMap::new())),
-        inlined: RefCell::new(Some(HashSet::new())),
-        populated_crate_impls: RefCell::new(HashSet::new()),
-    }, CrateAnalysis {
-        exported_items: exported_items,
-        public_items: public_items,
-        external_paths: RefCell::new(None),
-        external_traits: RefCell::new(None),
-        external_typarams: RefCell::new(None),
-        inlined: RefCell::new(None),
-    })
-}
+    driver::phase_3_run_analysis_passes(sess,
+                                        ast_map,
+                                        &arenas,
+                                        name,
+                                        resolve::MakeGlobMap::No,
+                                        |tcx, analysis| {
+        let ty::CrateAnalysis { exported_items, public_items, .. } = analysis;
 
-pub fn run_core(libs: HashSet<Path>, cfgs: Vec<String>, externs: Externs,
-                path: &Path, triple: Option<String>)
-                -> (clean::Crate, CrateAnalysis) {
-    let (ctxt, analysis) = get_ast_and_resolve(path, libs, cfgs, externs, triple);
-    let ctxt = box(GC) ctxt;
-    super::ctxtkey.replace(Some(ctxt));
+        let ctxt = DocContext {
+            krate: tcx.map.krate(),
+            maybe_typed: Typed(tcx),
+            input: input,
+            external_traits: RefCell::new(Some(HashMap::new())),
+            external_typarams: RefCell::new(Some(HashMap::new())),
+            external_paths: RefCell::new(Some(HashMap::new())),
+            inlined: RefCell::new(Some(HashSet::new())),
+            populated_crate_impls: RefCell::new(HashSet::new()),
+            deref_trait_did: Cell::new(None),
+        };
+        debug!("crate: {:?}", ctxt.krate);
 
-    let krate = {
-        let mut v = RustdocVisitor::new(&*ctxt, Some(&analysis));
-        v.visit(&ctxt.krate);
-        v.clean()
-    };
+        let mut analysis = CrateAnalysis {
+            exported_items: exported_items,
+            public_items: public_items,
+            external_paths: RefCell::new(None),
+            external_typarams: RefCell::new(None),
+            inlined: RefCell::new(None),
+            deref_trait_did: None,
+        };
 
-    let external_paths = ctxt.external_paths.borrow_mut().take();
-    *analysis.external_paths.borrow_mut() = external_paths;
-    let map = ctxt.external_traits.borrow_mut().take();
-    *analysis.external_traits.borrow_mut() = map;
-    let map = ctxt.external_typarams.borrow_mut().take();
-    *analysis.external_typarams.borrow_mut() = map;
-    let map = ctxt.inlined.borrow_mut().take();
-    *analysis.inlined.borrow_mut() = map;
-    (krate, analysis)
+        let krate = {
+            let mut v = RustdocVisitor::new(&ctxt, Some(&analysis));
+            v.visit(ctxt.krate);
+            v.clean(&ctxt)
+        };
+
+        let external_paths = ctxt.external_paths.borrow_mut().take();
+        *analysis.external_paths.borrow_mut() = external_paths;
+        let map = ctxt.external_typarams.borrow_mut().take();
+        *analysis.external_typarams.borrow_mut() = map;
+        let map = ctxt.inlined.borrow_mut().take();
+        *analysis.inlined.borrow_mut() = map;
+        analysis.deref_trait_did = ctxt.deref_trait_did.get();
+        (krate, analysis)
+    }).1
 }

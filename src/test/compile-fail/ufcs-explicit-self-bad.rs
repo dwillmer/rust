@@ -8,15 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::owned::Box;
+#![feature(box_syntax)]
 
 struct Foo {
-    f: int,
+    f: isize,
 }
 
 impl Foo {
-    fn foo(self: int, x: int) -> int {  //~ ERROR mismatched self type
-//~^ ERROR not a valid type for `self`
+    fn foo(self: isize, x: isize) -> isize {  //~ ERROR mismatched self type
         self.f + x
     }
 }
@@ -26,14 +25,32 @@ struct Bar<T> {
 }
 
 impl<T> Bar<T> {
-    fn foo(self: Bar<int>, x: int) -> int { //~ ERROR mismatched self type
-//~^ ERROR not a valid type for `self`
+    fn foo(self: Bar<isize>, x: isize) -> isize { //~ ERROR mismatched self type
         x
     }
-    fn bar(self: &Bar<uint>, x: int) -> int {   //~ ERROR mismatched self type
-//~^ ERROR not a valid type for `self`
+    fn bar(self: &Bar<usize>, x: isize) -> isize {   //~ ERROR mismatched self type
         x
     }
+}
+
+trait SomeTrait {
+    fn dummy1(&self);
+    fn dummy2(&self);
+    fn dummy3(&self);
+}
+
+impl<'a, T> SomeTrait for &'a Bar<T> {
+    fn dummy1(self: &&'a Bar<T>) { }
+    fn dummy2(self: &Bar<T>) {} //~ ERROR mismatched self type
+    fn dummy3(self: &&Bar<T>) {}
+    //~^ ERROR mismatched types
+    //~| expected `&'a Bar<T>`
+    //~| found `&Bar<T>`
+    //~| lifetime mismatch
+    //~| ERROR mismatched types
+    //~| expected `&'a Bar<T>`
+    //~| found `&Bar<T>`
+    //~| lifetime mismatch
 }
 
 fn main() {
@@ -46,4 +63,3 @@ fn main() {
     };
     println!("{} {}", bar.foo(2), bar.bar(2));
 }
-

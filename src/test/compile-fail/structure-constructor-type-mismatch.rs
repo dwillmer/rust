@@ -24,33 +24,41 @@ type PairF<U> = Pair<f32,U>;
 
 fn main() {
     let pt = PointF {
-        //~^ ERROR expected f32, found int
-        x: 1i,
-        y: 2i,
+        //~^ ERROR structure constructor specifies a structure of type
+        //~| expected f32
+        //~| found integral variable
+        x: 1,
+        y: 2,
     };
 
     let pt2 = Point::<f32> {
-        //~^ ERROR expected f32, found int
-        x: 3i,
-        y: 4i,
+        //~^ ERROR structure constructor specifies a structure of type
+        //~| expected f32
+        //~| found integral variable
+        x: 3,
+        y: 4,
     };
 
     let pair = PairF {
-        //~^ ERROR expected f32, found int
-        x: 5i,
-        y: 6i,
+        //~^ ERROR structure constructor specifies a structure of type
+        //~| expected f32
+        //~| found integral variable
+        x: 5,
+        y: 6,
     };
 
-    let pair2 = PairF::<int> {
-        //~^ ERROR expected f32, found int
-        x: 7i,
-        y: 8i,
+    let pair2 = PairF::<i32> {
+        //~^ ERROR structure constructor specifies a structure of type
+        //~| expected f32
+        //~| found integral variable
+        x: 7,
+        y: 8,
     };
 
-    let pt3 = PointF::<int> {
+    let pt3 = PointF::<i32> {
         //~^ ERROR wrong number of type arguments
-        x: 9i,
-        y: 10i,
+        //~| ERROR structure constructor specifies a structure of type
+        x: 9,
+        y: 10,
     };
 }
-

@@ -9,25 +9,32 @@
 // except according to those terms.
 
 use std::cmp::PartialEq;
+use std::ops::{Add, Sub, Mul};
 
-pub trait MyNum : Add<Self,Self> + Sub<Self,Self> + Mul<Self,Self> + PartialEq {
+pub trait MyNum : Add<Output=Self> + Sub<Output=Self> + Mul<Output=Self> + PartialEq + Clone {
 }
 
-#[deriving(Show)]
+#[derive(Clone, Debug)]
 pub struct MyInt {
-    pub val: int
+    pub val: isize
 }
 
-impl Add<MyInt, MyInt> for MyInt {
-    fn add(&self, other: &MyInt) -> MyInt { mi(self.val + other.val) }
+impl Add for MyInt {
+    type Output = MyInt;
+
+    fn add(self, other: MyInt) -> MyInt { mi(self.val + other.val) }
 }
 
-impl Sub<MyInt, MyInt> for MyInt {
-    fn sub(&self, other: &MyInt) -> MyInt { mi(self.val - other.val) }
+impl Sub for MyInt {
+    type Output = MyInt;
+
+    fn sub(self, other: MyInt) -> MyInt { mi(self.val - other.val) }
 }
 
-impl Mul<MyInt, MyInt> for MyInt {
-    fn mul(&self, other: &MyInt) -> MyInt { mi(self.val * other.val) }
+impl Mul for MyInt {
+    type Output = MyInt;
+
+    fn mul(self, other: MyInt) -> MyInt { mi(self.val * other.val) }
 }
 
 impl PartialEq for MyInt {
@@ -38,4 +45,4 @@ impl PartialEq for MyInt {
 
 impl MyNum for MyInt {}
 
-fn mi(v: int) -> MyInt { MyInt { val: v } }
+fn mi(v: isize) -> MyInt { MyInt { val: v } }

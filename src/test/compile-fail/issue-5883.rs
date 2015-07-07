@@ -14,9 +14,10 @@ struct Struct {
     r: A+'static
 }
 
-fn new_struct(r: A+'static) -> Struct {
-    //~^ ERROR variable `r` has dynamically sized type
-    Struct { r: r } //~ ERROR trying to initialise a dynamically sized struct
+fn new_struct(r: A+'static)
+    -> Struct { //~^  ERROR the trait `core::marker::Sized` is not implemented
+    //~^ ERROR the trait `core::marker::Sized` is not implemented
+    Struct { r: r }
 }
 
 trait Curve {}

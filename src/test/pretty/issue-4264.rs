@@ -14,35 +14,35 @@
 
 // #4264 fixed-length vector types
 
-pub fn foo(_: [int, ..3]) {}
+pub fn foo(_: [i32; 3]) {}
 
 pub fn bar() {
-    static FOO: uint = 5u - 4u;
-    let _: [(), ..FOO] = [()];
+    const FOO: usize = 5 - 4;
+    let _: [(); FOO] = [()];
 
-    let _ : [(), ..1u] = [()];
+    let _ : [(); 1] = [()];
 
-    let _ = &([1i,2,3]) as *const _ as *const [int, ..3u];
+    let _ = &([1,2,3]) as *const _ as *const [i32; 3];
 
     format!("test");
 }
 
-pub type Foo = [int, ..3u];
+pub type Foo = [i32; 3];
 
 pub struct Bar {
-    pub x: [int, ..3u]
+    pub x: [i32; 3]
 }
 
-pub struct TupleBar([int, ..4u]);
+pub struct TupleBar([i32; 4]);
 
 pub enum Baz {
-    BazVariant([int, ..5u])
+    BazVariant([i32; 5])
 }
 
 pub fn id<T>(x: T) -> T { x }
 
 pub fn use_id() {
-    let _ = id::<[int, ..3u]>([1,2,3]);
+    let _ = id::<[i32; 3]>([1,2,3]);
 }
 
 

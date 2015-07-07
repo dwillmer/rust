@@ -9,11 +9,12 @@
 // except according to those terms.
 
 
-use std::cell::Cell;
-use std::gc::GC;
 
+use std::cell::Cell;
+
+#[derive(Copy, Clone)]
 enum newtype {
-    newtype(int)
+    newvar(isize)
 }
 
 pub fn main() {
@@ -21,10 +22,10 @@ pub fn main() {
     // Test that borrowck treats enums with a single variant
     // specially.
 
-    let x = box(GC) Cell::new(5);
-    let y = box(GC) Cell::new(newtype(3));
+    let x = &Cell::new(5);
+    let y = &Cell::new(newtype::newvar(3));
     let z = match y.get() {
-      newtype(b) => {
+      newtype::newvar(b) => {
         x.set(x.get() + 1);
         x.get() * b
       }

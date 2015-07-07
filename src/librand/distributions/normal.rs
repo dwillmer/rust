@@ -28,6 +28,7 @@ use distributions::{ziggurat, ziggurat_tables, Sample, IndependentSample};
 /// Generate Normal Random
 /// Samples*](http://www.doornik.com/research/ziggurat.pdf). Nuffield
 /// College, Oxford
+#[derive(Copy, Clone)]
 pub struct StandardNormal(pub f64);
 
 impl Rand for StandardNormal {
@@ -71,18 +72,7 @@ impl Rand for StandardNormal {
 ///
 /// This uses the ZIGNOR variant of the Ziggurat method, see
 /// `StandardNormal` for more details.
-///
-/// # Example
-///
-/// ```rust
-/// use std::rand;
-/// use std::rand::distributions::{Normal, IndependentSample};
-///
-/// // mean 2, standard deviation 3
-/// let normal = Normal::new(2.0, 3.0);
-/// let v = normal.ind_sample(&mut rand::task_rng());
-/// println!("{} is from a N(2, 9) distribution", v)
-/// ```
+#[derive(Copy, Clone)]
 pub struct Normal {
     mean: f64,
     std_dev: f64,
@@ -90,7 +80,11 @@ pub struct Normal {
 
 impl Normal {
     /// Construct a new `Normal` distribution with the given mean and
-    /// standard deviation. Fails if `std_dev < 0`.
+    /// standard deviation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `std_dev < 0`.
     pub fn new(mean: f64, std_dev: f64) -> Normal {
         assert!(std_dev >= 0.0, "Normal::new called with `std_dev` < 0");
         Normal {
@@ -114,25 +108,18 @@ impl IndependentSample<f64> for Normal {
 ///
 /// If `X` is log-normal distributed, then `ln(X)` is `N(mean,
 /// std_dev**2)` distributed.
-///
-/// # Example
-///
-/// ```rust
-/// use std::rand;
-/// use std::rand::distributions::{LogNormal, IndependentSample};
-///
-/// // mean 2, standard deviation 3
-/// let log_normal = LogNormal::new(2.0, 3.0);
-/// let v = log_normal.ind_sample(&mut rand::task_rng());
-/// println!("{} is from an ln N(2, 9) distribution", v)
-/// ```
+#[derive(Copy, Clone)]
 pub struct LogNormal {
     norm: Normal
 }
 
 impl LogNormal {
     /// Construct a new `LogNormal` distribution with the given mean
-    /// and standard deviation. Fails if `std_dev < 0`.
+    /// and standard deviation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `std_dev < 0`.
     pub fn new(mean: f64, std_dev: f64) -> LogNormal {
         assert!(std_dev >= 0.0, "LogNormal::new called with `std_dev` < 0");
         LogNormal { norm: Normal::new(mean, std_dev) }
@@ -149,7 +136,7 @@ impl IndependentSample<f64> for LogNormal {
 
 #[cfg(test)]
 mod tests {
-    use std::prelude::*;
+    use std::prelude::v1::*;
 
     use distributions::{Sample, IndependentSample};
     use super::{Normal, LogNormal};
@@ -158,13 +145,13 @@ mod tests {
     fn test_normal() {
         let mut norm = Normal::new(10.0, 10.0);
         let mut rng = ::test::rng();
-        for _ in range(0u, 1000) {
+        for _ in 0..1000 {
             norm.sample(&mut rng);
             norm.ind_sample(&mut rng);
         }
     }
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_normal_invalid_sd() {
         Normal::new(10.0, -1.0);
     }
@@ -174,13 +161,13 @@ mod tests {
     fn test_log_normal() {
         let mut lnorm = LogNormal::new(10.0, 10.0);
         let mut rng = ::test::rng();
-        for _ in range(0u, 1000) {
+        for _ in 0..1000 {
             lnorm.sample(&mut rng);
             lnorm.ind_sample(&mut rng);
         }
     }
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_log_normal_invalid_sd() {
         LogNormal::new(10.0, -1.0);
     }
@@ -189,7 +176,7 @@ mod tests {
 #[cfg(test)]
 mod bench {
     extern crate test;
-    use std::prelude::*;
+    use std::prelude::v1::*;
     use self::test::Bencher;
     use std::mem::size_of;
     use distributions::{Sample};
@@ -201,7 +188,7 @@ mod bench {
         let mut normal = Normal::new(-2.71828, 3.14159);
 
         b.iter(|| {
-            for _ in range(0, ::RAND_BENCH_N) {
+            for _ in 0..::RAND_BENCH_N {
                 normal.sample(&mut rng);
             }
         });

@@ -12,7 +12,8 @@
 // Check we do the correct privacy checks when we import a name and there is an
 // item with that name in both the value and type namespaces.
 
-#![feature(globs)]
+// pretty-expanded FIXME #23616
+
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
@@ -20,6 +21,7 @@
 // public type, private value
 pub mod foo1 {
     pub trait Bar {
+        fn dummy(&self) { }
     }
     pub struct Baz;
 
@@ -51,6 +53,7 @@ fn test_glob1() {
 // private type, public value
 pub mod foo2 {
     trait Bar {
+        fn dummy(&self) { }
     }
     pub struct Baz;
 
@@ -82,6 +85,7 @@ fn test_glob2() {
 // public type, public value
 pub mod foo3 {
     pub trait Bar {
+        fn dummy(&self) { }
     }
     pub struct Baz;
 
@@ -115,4 +119,3 @@ fn test_glob3() {
 
 fn main() {
 }
-

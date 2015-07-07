@@ -8,32 +8,42 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-/*!
+//! Module that constructs a control-flow graph representing an item.
+//! Uses `Graph` as the underlying representation.
 
-Module that constructs a control-flow graph representing an item.
-Uses `Graph` as the underlying representation.
-
-*/
-
-use middle::graph;
+use rustc_data_structures::graph;
 use middle::ty;
 use syntax::ast;
-use util::nodemap::NodeMap;
 
 mod construct;
 pub mod graphviz;
 
 pub struct CFG {
-    pub exit_map: NodeMap<CFGIndex>,
     pub graph: CFGGraph,
     pub entry: CFGIndex,
     pub exit: CFGIndex,
 }
 
-pub struct CFGNodeData {
-    pub id: ast::NodeId
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum CFGNodeData {
+    AST(ast::NodeId),
+    Entry,
+    Exit,
+    Dummy,
+    Unreachable,
 }
 
+impl CFGNodeData {
+    pub fn id(&self) -> ast::NodeId {
+        if let CFGNodeData::AST(id) = *self {
+            id
+        } else {
+            ast::DUMMY_NODE_ID
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct CFGEdgeData {
     pub exiting_scopes: Vec<ast::NodeId>
 }
@@ -50,5 +60,10 @@ impl CFG {
     pub fn new(tcx: &ty::ctxt,
                blk: &ast::Block) -> CFG {
         construct::construct(tcx, blk)
+    }
+
+    pub fn node_is_reachable(&self, id: ast::NodeId) -> bool {
+        self.graph.depth_traverse(self.entry)
+                  .any(|idx| self.graph.node_data(idx).id() == id)
     }
 }

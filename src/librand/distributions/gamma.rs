@@ -7,10 +7,11 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
-//
-// ignore-lexer-test FIXME #15679
 
 //! The Gamma and derived distributions.
+
+use self::GammaRepr::*;
+use self::ChiSquaredRepr::*;
 
 use core::num::Float;
 
@@ -33,17 +34,6 @@ use super::{IndependentSample, Sample, Exp};
 /// falling back to directly sampling from an Exponential for `shape
 /// == 1`, and using the boosting technique described in [1] for
 /// `shape < 1`.
-///
-/// # Example
-///
-/// ```rust
-/// use std::rand;
-/// use std::rand::distributions::{IndependentSample, Gamma};
-///
-/// let gamma = Gamma::new(2.0, 5.0);
-/// let v = gamma.ind_sample(&mut rand::task_rng());
-/// println!("{} is from a Gamma(2, 5) distribution", v);
-/// ```
 ///
 /// [1]: George Marsaglia and Wai Wan Tsang. 2000. "A Simple Method
 /// for Generating Gamma Variables" *ACM Trans. Math. Softw.* 26, 3
@@ -92,15 +82,15 @@ impl Gamma {
     /// Construct an object representing the `Gamma(shape, scale)`
     /// distribution.
     ///
-    /// Fails if `shape <= 0` or `scale <= 0`.
+    /// Panics if `shape <= 0` or `scale <= 0`.
     pub fn new(shape: f64, scale: f64) -> Gamma {
         assert!(shape > 0.0, "Gamma::new called with shape <= 0");
         assert!(scale > 0.0, "Gamma::new called with scale <= 0");
 
         let repr = match shape {
-            1.0        => One(Exp::new(1.0 / scale)),
-            0.0 .. 1.0 => Small(GammaSmallShape::new_raw(shape, scale)),
-            _          => Large(GammaLargeShape::new_raw(shape, scale))
+            1.0         => One(Exp::new(1.0 / scale)),
+            0.0 ... 1.0 => Small(GammaSmallShape::new_raw(shape, scale)),
+            _           => Large(GammaLargeShape::new_raw(shape, scale))
         };
         Gamma { repr: repr }
     }
@@ -180,17 +170,6 @@ impl IndependentSample<f64> for GammaLargeShape {
 /// of `k` independent standard normal random variables. For other
 /// `k`, this uses the equivalent characterisation `χ²(k) = Gamma(k/2,
 /// 2)`.
-///
-/// # Example
-///
-/// ```rust
-/// use std::rand;
-/// use std::rand::distributions::{ChiSquared, IndependentSample};
-///
-/// let chi = ChiSquared::new(11.0);
-/// let v = chi.ind_sample(&mut rand::task_rng());
-/// println!("{} is from a χ²(11) distribution", v)
-/// ```
 pub struct ChiSquared {
     repr: ChiSquaredRepr,
 }
@@ -205,7 +184,7 @@ enum ChiSquaredRepr {
 
 impl ChiSquared {
     /// Create a new chi-squared distribution with degrees-of-freedom
-    /// `k`. Fails if `k < 0`.
+    /// `k`. Panics if `k < 0`.
     pub fn new(k: f64) -> ChiSquared {
         let repr = if k == 1.0 {
             DoFExactlyOne
@@ -237,17 +216,6 @@ impl IndependentSample<f64> for ChiSquared {
 /// This distribution is equivalent to the ratio of two normalised
 /// chi-squared distributions, that is, `F(m,n) = (χ²(m)/m) /
 /// (χ²(n)/n)`.
-///
-/// # Example
-///
-/// ```rust
-/// use std::rand;
-/// use std::rand::distributions::{FisherF, IndependentSample};
-///
-/// let f = FisherF::new(2.0, 32.0);
-/// let v = f.ind_sample(&mut rand::task_rng());
-/// println!("{} is from an F(2, 32) distribution", v)
-/// ```
 pub struct FisherF {
     numer: ChiSquared,
     denom: ChiSquared,
@@ -258,7 +226,7 @@ pub struct FisherF {
 
 impl FisherF {
     /// Create a new `FisherF` distribution, with the given
-    /// parameter. Fails if either `m` or `n` are not positive.
+    /// parameter. Panics if either `m` or `n` are not positive.
     pub fn new(m: f64, n: f64) -> FisherF {
         assert!(m > 0.0, "FisherF::new called with `m < 0`");
         assert!(n > 0.0, "FisherF::new called with `n < 0`");
@@ -281,17 +249,6 @@ impl IndependentSample<f64> for FisherF {
 
 /// The Student t distribution, `t(nu)`, where `nu` is the degrees of
 /// freedom.
-///
-/// # Example
-///
-/// ```rust
-/// use std::rand;
-/// use std::rand::distributions::{StudentT, IndependentSample};
-///
-/// let t = StudentT::new(11.0);
-/// let v = t.ind_sample(&mut rand::task_rng());
-/// println!("{} is from a t(11) distribution", v)
-/// ```
 pub struct StudentT {
     chi: ChiSquared,
     dof: f64
@@ -299,7 +256,7 @@ pub struct StudentT {
 
 impl StudentT {
     /// Create a new Student t distribution with `n` degrees of
-    /// freedom. Fails if `n <= 0`.
+    /// freedom. Panics if `n <= 0`.
     pub fn new(n: f64) -> StudentT {
         assert!(n > 0.0, "StudentT::new called with `n <= 0`");
         StudentT {
@@ -319,8 +276,8 @@ impl IndependentSample<f64> for StudentT {
 }
 
 #[cfg(test)]
-mod test {
-    use std::prelude::*;
+mod tests {
+    use std::prelude::v1::*;
 
     use distributions::{Sample, IndependentSample};
     use super::{ChiSquared, StudentT, FisherF};
@@ -329,7 +286,7 @@ mod test {
     fn test_chi_squared_one() {
         let mut chi = ChiSquared::new(1.0);
         let mut rng = ::test::rng();
-        for _ in range(0u, 1000) {
+        for _ in 0..1000 {
             chi.sample(&mut rng);
             chi.ind_sample(&mut rng);
         }
@@ -338,7 +295,7 @@ mod test {
     fn test_chi_squared_small() {
         let mut chi = ChiSquared::new(0.5);
         let mut rng = ::test::rng();
-        for _ in range(0u, 1000) {
+        for _ in 0..1000 {
             chi.sample(&mut rng);
             chi.ind_sample(&mut rng);
         }
@@ -347,13 +304,13 @@ mod test {
     fn test_chi_squared_large() {
         let mut chi = ChiSquared::new(30.0);
         let mut rng = ::test::rng();
-        for _ in range(0u, 1000) {
+        for _ in 0..1000 {
             chi.sample(&mut rng);
             chi.ind_sample(&mut rng);
         }
     }
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_chi_squared_invalid_dof() {
         ChiSquared::new(-1.0);
     }
@@ -362,7 +319,7 @@ mod test {
     fn test_f() {
         let mut f = FisherF::new(2.0, 32.0);
         let mut rng = ::test::rng();
-        for _ in range(0u, 1000) {
+        for _ in 0..1000 {
             f.sample(&mut rng);
             f.ind_sample(&mut rng);
         }
@@ -372,7 +329,7 @@ mod test {
     fn test_t() {
         let mut t = StudentT::new(11.0);
         let mut rng = ::test::rng();
-        for _ in range(0u, 1000) {
+        for _ in 0..1000 {
             t.sample(&mut rng);
             t.ind_sample(&mut rng);
         }
@@ -382,7 +339,7 @@ mod test {
 #[cfg(test)]
 mod bench {
     extern crate test;
-    use std::prelude::*;
+    use std::prelude::v1::*;
     use self::test::Bencher;
     use std::mem::size_of;
     use distributions::IndependentSample;
@@ -395,7 +352,7 @@ mod bench {
         let mut rng = ::test::weak_rng();
 
         b.iter(|| {
-            for _ in range(0, ::RAND_BENCH_N) {
+            for _ in 0..::RAND_BENCH_N {
                 gamma.ind_sample(&mut rng);
             }
         });
@@ -408,7 +365,7 @@ mod bench {
         let mut rng = ::test::weak_rng();
 
         b.iter(|| {
-            for _ in range(0, ::RAND_BENCH_N) {
+            for _ in 0..::RAND_BENCH_N {
                 gamma.ind_sample(&mut rng);
             }
         });

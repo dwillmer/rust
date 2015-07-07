@@ -9,17 +9,17 @@
 // except according to those terms.
 
 use core::option::*;
-use core::kinds::marker;
 use core::mem;
+use core::clone::Clone;
 
 #[test]
 fn test_get_ptr() {
     unsafe {
-        let x = box 0i;
-        let addr_x: *const int = mem::transmute(&*x);
+        let x: Box<_> = box 0;
+        let addr_x: *const isize = mem::transmute(&*x);
         let opt = Some(x);
         let y = opt.unwrap();
-        let addr_y: *const int = mem::transmute(&*y);
+        let addr_y: *const isize = mem::transmute(&*y);
         assert_eq!(addr_x, addr_y);
     }
 }
@@ -27,10 +27,10 @@ fn test_get_ptr() {
 #[test]
 fn test_get_str() {
     let x = "test".to_string();
-    let addr_x = x.as_slice().as_ptr();
+    let addr_x = x.as_ptr();
     let opt = Some(x);
     let y = opt.unwrap();
-    let addr_y = y.as_slice().as_ptr();
+    let addr_y = y.as_ptr();
     assert_eq!(addr_x, addr_y);
 }
 
@@ -40,11 +40,10 @@ fn test_get_resource() {
     use core::cell::RefCell;
 
     struct R {
-       i: Rc<RefCell<int>>,
+       i: Rc<RefCell<isize>>,
     }
 
-    #[unsafe_destructor]
-    impl Drop for R {
+        impl Drop for R {
        fn drop(&mut self) {
             let ii = &*self.i;
             let i = *ii.borrow();
@@ -52,13 +51,13 @@ fn test_get_resource() {
         }
     }
 
-    fn r(i: Rc<RefCell<int>>) -> R {
+    fn r(i: Rc<RefCell<isize>>) -> R {
         R {
             i: i
         }
     }
 
-    let i = Rc::new(RefCell::new(0i));
+    let i = Rc::new(RefCell::new(0));
     {
         let x = r(i.clone());
         let opt = Some(x);
@@ -70,130 +69,109 @@ fn test_get_resource() {
 #[test]
 fn test_option_dance() {
     let x = Some(());
-    let mut y = Some(5i);
+    let mut y = Some(5);
     let mut y2 = 0;
-    for _x in x.iter() {
+    for _x in x {
         y2 = y.take().unwrap();
     }
     assert_eq!(y2, 5);
     assert!(y.is_none());
 }
 
-#[test] #[should_fail]
+#[test] #[should_panic]
 fn test_option_too_much_dance() {
-    let mut y = Some(marker::NoCopy);
+    struct A;
+    let mut y = Some(A);
     let _y2 = y.take().unwrap();
     let _y3 = y.take().unwrap();
 }
 
 #[test]
 fn test_and() {
-    let x: Option<int> = Some(1i);
-    assert_eq!(x.and(Some(2i)), Some(2));
-    assert_eq!(x.and(None::<int>), None);
+    let x: Option<isize> = Some(1);
+    assert_eq!(x.and(Some(2)), Some(2));
+    assert_eq!(x.and(None::<isize>), None);
 
-    let x: Option<int> = None;
-    assert_eq!(x.and(Some(2i)), None);
-    assert_eq!(x.and(None::<int>), None);
+    let x: Option<isize> = None;
+    assert_eq!(x.and(Some(2)), None);
+    assert_eq!(x.and(None::<isize>), None);
 }
 
 #[test]
 fn test_and_then() {
-    let x: Option<int> = Some(1);
+    let x: Option<isize> = Some(1);
     assert_eq!(x.and_then(|x| Some(x + 1)), Some(2));
-    assert_eq!(x.and_then(|_| None::<int>), None);
+    assert_eq!(x.and_then(|_| None::<isize>), None);
 
-    let x: Option<int> = None;
+    let x: Option<isize> = None;
     assert_eq!(x.and_then(|x| Some(x + 1)), None);
-    assert_eq!(x.and_then(|_| None::<int>), None);
+    assert_eq!(x.and_then(|_| None::<isize>), None);
 }
 
 #[test]
 fn test_or() {
-    let x: Option<int> = Some(1);
+    let x: Option<isize> = Some(1);
     assert_eq!(x.or(Some(2)), Some(1));
     assert_eq!(x.or(None), Some(1));
 
-    let x: Option<int> = None;
+    let x: Option<isize> = None;
     assert_eq!(x.or(Some(2)), Some(2));
     assert_eq!(x.or(None), None);
 }
 
 #[test]
 fn test_or_else() {
-    let x: Option<int> = Some(1);
+    let x: Option<isize> = Some(1);
     assert_eq!(x.or_else(|| Some(2)), Some(1));
     assert_eq!(x.or_else(|| None), Some(1));
 
-    let x: Option<int> = None;
+    let x: Option<isize> = None;
     assert_eq!(x.or_else(|| Some(2)), Some(2));
     assert_eq!(x.or_else(|| None), None);
 }
 
 #[test]
-fn test_option_while_some() {
-    let mut i = 0i;
-    Some(10i).while_some(|j| {
-        i += 1;
-        if j > 0 {
-            Some(j-1)
-        } else {
-            None
-        }
-    });
-    assert_eq!(i, 11);
-}
-
-#[test]
 fn test_unwrap() {
-    assert_eq!(Some(1i).unwrap(), 1);
+    assert_eq!(Some(1).unwrap(), 1);
     let s = Some("hello".to_string()).unwrap();
-    assert_eq!(s.as_slice(), "hello");
+    assert_eq!(s, "hello");
 }
 
 #[test]
-#[should_fail]
-fn test_unwrap_fail1() {
-    let x: Option<int> = None;
+#[should_panic]
+fn test_unwrap_panic1() {
+    let x: Option<isize> = None;
     x.unwrap();
 }
 
 #[test]
-#[should_fail]
-fn test_unwrap_fail2() {
+#[should_panic]
+fn test_unwrap_panic2() {
     let x: Option<String> = None;
     x.unwrap();
 }
 
 #[test]
 fn test_unwrap_or() {
-    let x: Option<int> = Some(1);
+    let x: Option<isize> = Some(1);
     assert_eq!(x.unwrap_or(2), 1);
 
-    let x: Option<int> = None;
+    let x: Option<isize> = None;
     assert_eq!(x.unwrap_or(2), 2);
 }
 
 #[test]
 fn test_unwrap_or_else() {
-    let x: Option<int> = Some(1);
+    let x: Option<isize> = Some(1);
     assert_eq!(x.unwrap_or_else(|| 2), 1);
 
-    let x: Option<int> = None;
+    let x: Option<isize> = None;
     assert_eq!(x.unwrap_or_else(|| 2), 2);
 }
 
 #[test]
-fn test_filtered() {
-    let some_stuff = Some(42i);
-    let modified_stuff = some_stuff.filtered(|&x| {x < 10});
-    assert_eq!(some_stuff.unwrap(), 42);
-    assert!(modified_stuff.is_none());
-}
-
-#[test]
 fn test_iter() {
-    let val = 5i;
+    let val = 5;
 
     let x = Some(val);
     let mut it = x.iter();
@@ -206,12 +184,12 @@ fn test_iter() {
 
 #[test]
 fn test_mut_iter() {
-    let val = 5i;
-    let new_val = 11i;
+    let val = 5;
+    let new_val = 11;
 
     let mut x = Some(val);
     {
-        let mut it = x.mut_iter();
+        let mut it = x.iter_mut();
 
         assert_eq!(it.size_hint(), (1, Some(1)));
 
@@ -242,37 +220,46 @@ fn test_ord() {
 }
 
 #[test]
-fn test_mutate() {
-    let mut x = Some(3i);
-    assert!(x.mutate(|i| i+1));
-    assert_eq!(x, Some(4i));
-    assert!(x.mutate_or_set(0, |i| i+1));
-    assert_eq!(x, Some(5i));
-    x = None;
-    assert!(!x.mutate(|i| i+1));
-    assert_eq!(x, None);
-    assert!(!x.mutate_or_set(0i, |i| i+1));
-    assert_eq!(x, Some(0i));
-}
-
-#[test]
 fn test_collect() {
-    let v: Option<Vec<int>> = collect(range(0i, 0)
-                                      .map(|_| Some(0i)));
+    let v: Option<Vec<isize>> = (0..0).map(|_| Some(0)).collect();
     assert!(v == Some(vec![]));
 
-    let v: Option<Vec<int>> = collect(range(0i, 3)
-                                      .map(|x| Some(x)));
+    let v: Option<Vec<isize>> = (0..3).map(|x| Some(x)).collect();
     assert!(v == Some(vec![0, 1, 2]));
 
-    let v: Option<Vec<int>> = collect(range(0i, 3)
-                                      .map(|x| if x > 1 { None } else { Some(x) }));
+    let v: Option<Vec<isize>> = (0..3).map(|x| {
+        if x > 1 { None } else { Some(x) }
+    }).collect();
     assert!(v == None);
 
     // test that it does not take more elements than it needs
-    let mut functions = [|| Some(()), || None, || fail!()];
+    let mut functions: [Box<Fn() -> Option<()>>; 3] =
+        [box || Some(()), box || None, box || panic!()];
 
-    let v: Option<Vec<()>> = collect(functions.mut_iter().map(|f| (*f)()));
+    let v: Option<Vec<()>> = functions.iter_mut().map(|f| (*f)()).collect();
 
     assert!(v == None);
+}
+
+
+#[test]
+fn test_cloned() {
+    let val = 1u32;
+    let val_ref = &val;
+    let opt_none: Option<&'static u32> = None;
+    let opt_ref = Some(&val);
+    let opt_ref_ref = Some(&val_ref);
+
+    // None works
+    assert_eq!(opt_none.clone(), None);
+    assert_eq!(opt_none.cloned(), None);
+
+    // Immutable ref works
+    assert_eq!(opt_ref.clone(), Some(&val));
+    assert_eq!(opt_ref.cloned(), Some(1u32));
+
+    // Double Immutable ref works
+    assert_eq!(opt_ref_ref.clone(), Some(&val_ref));
+    assert_eq!(opt_ref_ref.clone().cloned(), Some(&val));
+    assert_eq!(opt_ref_ref.cloned().cloned(), Some(1u32));
 }

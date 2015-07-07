@@ -8,51 +8,42 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
-// ignore-test: Not sure what is going on here --pcwalton
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
 
 // FIRST ITERATION
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$1 = 1
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$2 = -1
 // gdb-command:continue
 
 // SECOND ITERATION
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$3 = 2
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$4 = -2
 // gdb-command:continue
 
 // THIRD ITERATION
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$5 = 3
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$6 = -3
 // gdb-command:continue
 
 // AFTER LOOP
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$7 = 1000000
 // gdb-command:continue
@@ -94,17 +85,19 @@
 // lldb-check:[...]$6 = 1000000
 // lldb-command:continue
 
+#![omit_gdb_pretty_printer_section]
+
 fn main() {
 
-    let range = [1i, 2, 3];
+    let range = [1, 2, 3];
 
-    let x = 1000000i; // wan meeeljen doollaars!
+    let x = 1000000; // wan meeeljen doollaars!
 
-    for &x in range.iter() {
+    for &x in &range {
         zzz(); // #break
         sentinel();
 
-        let x = -1i * x;
+        let x = -1 * x;
 
         zzz(); // #break
         sentinel();

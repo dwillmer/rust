@@ -8,9 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(advanced_slice_patterns)]
+#![feature(box_patterns)]
+#![feature(box_syntax)]
+#![feature(slice_patterns)]
 
 fn a() {
-    let mut vec = [box 1i, box 2, box 3];
+    let mut vec = [box 1, box 2, box 3];
     match vec {
         [box ref _a, _, _] => {
             vec[0] = box 4; //~ ERROR cannot assign
@@ -19,21 +23,21 @@ fn a() {
 }
 
 fn b() {
-    let mut vec = vec!(box 1i, box 2, box 3);
-    let vec: &mut [Box<int>] = vec.as_mut_slice();
+    let mut vec = vec!(box 1, box 2, box 3);
+    let vec: &mut [Box<isize>] = &mut vec;
     match vec {
-        [.._b] => {
+        [_b..] => {
             vec[0] = box 4; //~ ERROR cannot assign
         }
     }
 }
 
 fn c() {
-    let mut vec = vec!(box 1i, box 2, box 3);
-    let vec: &mut [Box<int>] = vec.as_mut_slice();
+    let mut vec = vec!(box 1, box 2, box 3);
+    let vec: &mut [Box<isize>] = &mut vec;
     match vec {
         [_a,         //~ ERROR cannot move out
-         .._b] => {  //~^ NOTE attempting to move value to here
+         _b..] => {  //~^ NOTE attempting to move value to here
 
             // Note: `_a` is *moved* here, but `b` is borrowing,
             // hence illegal.
@@ -47,10 +51,10 @@ fn c() {
 }
 
 fn d() {
-    let mut vec = vec!(box 1i, box 2, box 3);
-    let vec: &mut [Box<int>] = vec.as_mut_slice();
+    let mut vec = vec!(box 1, box 2, box 3);
+    let vec: &mut [Box<isize>] = &mut vec;
     match vec {
-        [.._a,     //~ ERROR cannot move out
+        [_a..,     //~ ERROR cannot move out
          _b] => {} //~ NOTE attempting to move value to here
         _ => {}
     }
@@ -58,8 +62,8 @@ fn d() {
 }
 
 fn e() {
-    let mut vec = vec!(box 1i, box 2, box 3);
-    let vec: &mut [Box<int>] = vec.as_mut_slice();
+    let mut vec = vec!(box 1, box 2, box 3);
+    let vec: &mut [Box<isize>] = &mut vec;
     match vec {
         [_a, _b, _c] => {}  //~ ERROR cannot move out
         //~^ NOTE attempting to move value to here

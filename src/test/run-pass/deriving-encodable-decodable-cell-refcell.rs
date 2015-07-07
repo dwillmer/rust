@@ -9,21 +9,23 @@
 // except according to those terms.
 
 // This briefly tests the capability of `Cell` and `RefCell` to implement the
-// `Encodable` and `Decodable` traits via `#[deriving(Encodable, Decodable)]`
+// `Encodable` and `Decodable` traits via `#[derive(Encodable, Decodable)]`
+
+
+#![feature(rustc_private)]
 
 extern crate serialize;
 
 use std::cell::{Cell, RefCell};
-use std::io::MemWriter;
 use serialize::{Encodable, Decodable};
 use serialize::json;
 
-#[deriving(Encodable, Decodable)]
+#[derive(Encodable, Decodable)]
 struct A {
-    baz: int
+    baz: isize
 }
 
-#[deriving(Encodable, Decodable)]
+#[derive(Encodable, Decodable)]
 struct B {
     foo: Cell<bool>,
     bar: RefCell<A>,
@@ -34,8 +36,8 @@ fn main() {
         foo: Cell::new(true),
         bar: RefCell::new( A { baz: 2 } )
     };
-    let s = json::encode(&obj);
-    let obj2: B = json::decode(s.as_slice()).unwrap();
-    assert!(obj.foo.get() == obj2.foo.get());
-    assert!(obj.bar.borrow().baz == obj2.bar.borrow().baz);
+    let s = json::encode(&obj).unwrap();
+    let obj2: B = json::decode(&s).unwrap();
+    assert_eq!(obj.foo.get(), obj2.foo.get());
+    assert_eq!(obj.bar.borrow().baz, obj2.bar.borrow().baz);
 }

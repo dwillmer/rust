@@ -9,10 +9,10 @@
 // except according to those terms.
 
 use clean::*;
-use std::iter::Extendable;
+use std::collections::HashMap;
 use std::mem::{replace, swap};
 
-pub trait DocFolder {
+pub trait DocFolder : Sized {
     fn fold_item(&mut self, item: Item) -> Option<Item> {
         self.fold_item_recur(item)
     }
@@ -25,7 +25,7 @@ pub trait DocFolder {
             StructItem(mut i) => {
                 let mut foo = Vec::new(); swap(&mut foo, &mut i.fields);
                 let num_fields = foo.len();
-                i.fields.extend(foo.move_iter().filter_map(|x| self.fold_item(x)));
+                i.fields.extend(foo.into_iter().filter_map(|x| self.fold_item(x)));
                 i.fields_stripped |= num_fields != i.fields.len();
                 StructItem(i)
             },
@@ -35,36 +35,18 @@ pub trait DocFolder {
             EnumItem(mut i) => {
                 let mut foo = Vec::new(); swap(&mut foo, &mut i.variants);
                 let num_variants = foo.len();
-                i.variants.extend(foo.move_iter().filter_map(|x| self.fold_item(x)));
+                i.variants.extend(foo.into_iter().filter_map(|x| self.fold_item(x)));
                 i.variants_stripped |= num_variants != i.variants.len();
                 EnumItem(i)
             },
             TraitItem(mut i) => {
-                fn vtrm<T: DocFolder>(this: &mut T, trm: TraitItem)
-                        -> Option<TraitItem> {
-                    match trm {
-                        RequiredMethod(it) => {
-                            match this.fold_item(it) {
-                                Some(x) => return Some(RequiredMethod(x)),
-                                None => return None,
-                            }
-                        },
-                        ProvidedMethod(it) => {
-                            match this.fold_item(it) {
-                                Some(x) => return Some(ProvidedMethod(x)),
-                                None => return None,
-                            }
-                        },
-                    }
-                }
                 let mut foo = Vec::new(); swap(&mut foo, &mut i.items);
-                i.items.extend(foo.move_iter().filter_map(|x| vtrm(self, x)));
+                i.items.extend(foo.into_iter().filter_map(|x| self.fold_item(x)));
                 TraitItem(i)
             },
             ImplItem(mut i) => {
                 let mut foo = Vec::new(); swap(&mut foo, &mut i.items);
-                i.items.extend(foo.move_iter()
-                                  .filter_map(|x| self.fold_item(x)));
+                i.items.extend(foo.into_iter().filter_map(|x| self.fold_item(x)));
                 ImplItem(i)
             },
             VariantItem(i) => {
@@ -73,8 +55,7 @@ pub trait DocFolder {
                     StructVariant(mut j) => {
                         let mut foo = Vec::new(); swap(&mut foo, &mut j.fields);
                         let num_fields = foo.len();
-                        let c = |x| self.fold_item(x);
-                        j.fields.extend(foo.move_iter().filter_map(c));
+                        j.fields.extend(foo.into_iter().filter_map(|x| self.fold_item(x)));
                         j.fields_stripped |= num_fields != j.fields.len();
                         VariantItem(Variant {kind: StructVariant(j), ..i2})
                     },
@@ -91,7 +72,7 @@ pub trait DocFolder {
     fn fold_mod(&mut self, m: Module) -> Module {
         Module {
             is_crate: m.is_crate,
-            items: m.items.move_iter().filter_map(|i| self.fold_item(i)).collect()
+            items: m.items.into_iter().filter_map(|i| self.fold_item(i)).collect()
         }
     }
 
@@ -99,6 +80,13 @@ pub trait DocFolder {
         c.module = match replace(&mut c.module, None) {
             Some(module) => self.fold_item(module), None => None
         };
+        let external_traits = replace(&mut c.external_traits, HashMap::new());
+        c.external_traits = external_traits.into_iter().map(|(k, mut v)| {
+            let items = replace(&mut v.items, Vec::new());
+            v.items = items.into_iter().filter_map(|i| self.fold_item(i))
+                           .collect();
+            (k, v)
+        }).collect();
         return c;
     }
 }

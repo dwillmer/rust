@@ -10,31 +10,36 @@
 
 // Test that a custom deref with a fat pointer return type does not ICE
 
+
+use std::ops::{Deref, DerefMut};
+
 pub struct Arr {
-    ptr: Box<[uint]>
+    ptr: Box<[usize]>
 }
 
-impl Deref<[uint]> for Arr {
-    fn deref(&self) -> &[uint] {
-        fail!();
+impl Deref for Arr {
+    type Target = [usize];
+
+    fn deref(&self) -> &[usize] {
+        panic!();
     }
 }
 
-impl DerefMut<[uint]> for Arr {
-    fn deref_mut(&mut self) -> &mut [uint] {
+impl DerefMut for Arr {
+    fn deref_mut(&mut self) -> &mut [usize] {
         &mut *self.ptr
     }
 }
 
 pub fn foo(arr: &mut Arr) {
-    assert!(arr.len() == 3);
-    let x: &mut [uint] = &mut **arr;
-    assert!(x[0] == 1);
-    assert!(x[1] == 2);
-    assert!(x[2] == 3);
+    let x: &mut [usize] = &mut **arr;
+    assert_eq!(x[0], 1);
+    assert_eq!(x[1], 2);
+    assert_eq!(x[2], 3);
 }
 
 fn main() {
-    let mut a = Arr { ptr: box [1, 2, 3] };
+    // FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
+    let mut a = Arr { ptr: Box::new([1, 2, 3]) };
     foo(&mut a);
 }

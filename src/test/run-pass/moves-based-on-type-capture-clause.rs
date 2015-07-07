@@ -8,11 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::task;
+#![feature(std_misc)]
+
+use std::thread;
 
 pub fn main() {
     let x = "Hello world!".to_string();
-    task::spawn(proc() {
+    thread::spawn(move|| {
         println!("{}", x);
-    });
+    }).join();
 }

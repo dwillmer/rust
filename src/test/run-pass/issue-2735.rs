@@ -8,8 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// pretty-expanded FIXME #23616
 
-trait hax { }
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
+trait hax {
+    fn dummy(&self) { }
+}
 impl<A> hax for A { }
 
 fn perform_hax<T: 'static>(x: Box<T>) -> Box<hax+'static> {
@@ -21,5 +27,5 @@ fn deadcode() {
 }
 
 pub fn main() {
-    perform_hax(box 42i);
+    perform_hax(box 42);
 }

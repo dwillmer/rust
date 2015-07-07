@@ -8,12 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(unboxed_closures)]
+
+use std::io::Read;
+
+fn to_fn_once<A,F:FnOnce<A>>(f: F) -> F { f }
+
 fn main() {
-    let x = 1i;
-    proc() { x = 2; };
-    //~^ ERROR: cannot assign to immutable captured outer variable in a proc `x`
+    let x = 1;
+    to_fn_once(move|| { x = 2; });
+    //~^ ERROR: cannot assign to immutable captured outer variable
 
     let s = std::io::stdin();
-    proc() { s.lines(); };
-    //~^ ERROR: cannot borrow immutable captured outer variable in a proc `s` as mutable
+    to_fn_once(move|| { s.read_to_end(&mut Vec::new()); });
+    //~^ ERROR: cannot borrow immutable captured outer variable
 }

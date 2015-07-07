@@ -7,480 +7,383 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
-//
-// ignore-lexer-test FIXME #15679
 
 //! Operations on ASCII strings and characters
 
-#![experimental]
+#![stable(feature = "rust1", since = "1.0.0")]
 
-use collections::Collection;
-use fmt;
-use iter::Iterator;
+use prelude::v1::*;
+
+use ops::Range;
 use mem;
-use option::{Option, Some, None};
-use slice::{ImmutableSlice, MutableSlice, Slice};
-use str::{Str, StrSlice};
-use str;
-use string::String;
-use to_string::IntoStr;
-use vec::Vec;
 
-#[deprecated="this trait has been renamed to `AsciiExt`"]
-pub use self::AsciiExt as StrAsciiExt;
+/// Extension methods for ASCII-subset only operations on owned strings
+#[unstable(feature = "owned_ascii_ext",
+           reason = "would prefer to do this in a more general way")]
+pub trait OwnedAsciiExt {
+    /// Converts the string to ASCII upper case:
+    /// ASCII letters 'a' to 'z' are mapped to 'A' to 'Z',
+    /// but non-ASCII letters are unchanged.
+    fn into_ascii_uppercase(self) -> Self;
 
-#[deprecated="this trait has been renamed to `OwnedAsciiExt`"]
-pub use self::OwnedAsciiExt as OwnedStrAsciiExt;
-
-
-/// Datatype to hold one ascii character. It wraps a `u8`, with the highest bit always zero.
-#[deriving(Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
-pub struct Ascii { chr: u8 }
-
-impl Ascii {
-    /// Converts an ascii character into a `u8`.
-    #[inline]
-    pub fn to_byte(self) -> u8 {
-        self.chr
-    }
-
-    /// Converts an ascii character into a `char`.
-    #[inline]
-    pub fn to_char(self) -> char {
-        self.chr as char
-    }
-
-    #[inline]
-    #[allow(missing_doc)]
-    #[deprecated="renamed to `to_lowercase`"]
-    pub fn to_lower(self) -> Ascii {
-        self.to_lowercase()
-    }
-
-    /// Convert to lowercase.
-    #[inline]
-    pub fn to_lowercase(self) -> Ascii {
-        Ascii{chr: ASCII_LOWER_MAP[self.chr as uint]}
-    }
-
-    #[inline]
-    #[allow(missing_doc)]
-    #[deprecated="renamed to `to_uppercase`"]
-    pub fn to_upper(self) -> Ascii {
-        self.to_uppercase()
-    }
-
-    /// Convert to uppercase.
-    #[inline]
-    pub fn to_uppercase(self) -> Ascii {
-        Ascii{chr: ASCII_UPPER_MAP[self.chr as uint]}
-    }
-
-    /// Compares two ascii characters of equality, ignoring case.
-    #[inline]
-    pub fn eq_ignore_case(self, other: Ascii) -> bool {
-        ASCII_LOWER_MAP[self.chr as uint] == ASCII_LOWER_MAP[other.chr as uint]
-    }
-
-    // the following methods are like ctype, and the implementation is inspired by musl
-
-    #[inline]
-    #[allow(missing_doc)]
-    #[deprecated="renamed to `is_alphabetic`"]
-    pub fn is_alpha(&self) -> bool {
-        self.is_alphabetic()
-    }
-
-    /// Check if the character is a letter (a-z, A-Z)
-    #[inline]
-    pub fn is_alphabetic(&self) -> bool {
-        (self.chr >= 0x41 && self.chr <= 0x5A) || (self.chr >= 0x61 && self.chr <= 0x7A)
-    }
-
-    /// Check if the character is a number (0-9)
-    #[inline]
-    pub fn is_digit(&self) -> bool {
-        self.chr >= 0x30 && self.chr <= 0x39
-    }
-
-    #[inline]
-    #[allow(missing_doc)]
-    #[deprecated="renamed to `is_alphanumeric`"]
-    pub fn is_alnum(&self) -> bool {
-        self.is_alphanumeric()
-    }
-
-    /// Check if the character is a letter or number
-    #[inline]
-    pub fn is_alphanumeric(&self) -> bool {
-        self.is_alpha() || self.is_digit()
-    }
-
-    /// Check if the character is a space or horizontal tab
-    #[inline]
-    pub fn is_blank(&self) -> bool {
-        self.chr == b' ' || self.chr == b'\t'
-    }
-
-    /// Check if the character is a control character
-    #[inline]
-    pub fn is_control(&self) -> bool {
-        self.chr < 0x20 || self.chr == 0x7F
-    }
-
-    /// Checks if the character is printable (except space)
-    #[inline]
-    pub fn is_graph(&self) -> bool {
-        (self.chr - 0x21) < 0x5E
-    }
-
-    /// Checks if the character is printable (including space)
-    #[inline]
-    pub fn is_print(&self) -> bool {
-        (self.chr - 0x20) < 0x5F
-    }
-
-    #[inline]
-    #[allow(missing_doc)]
-    #[deprecated="renamed to `is_lowercase`"]
-    pub fn is_lower(&self) -> bool {
-        self.is_lowercase()
-    }
-
-    /// Checks if the character is lowercase
-    #[inline]
-    pub fn is_lowercase(&self) -> bool {
-        (self.chr - b'a') < 26
-    }
-
-    #[inline]
-    #[allow(missing_doc)]
-    #[deprecated="renamed to `is_uppercase`"]
-    pub fn is_upper(&self) -> bool {
-        self.is_uppercase()
-    }
-
-    /// Checks if the character is uppercase
-    #[inline]
-    pub fn is_uppercase(&self) -> bool {
-        (self.chr - b'A') < 26
-    }
-
-    /// Checks if the character is punctuation
-    #[inline]
-    pub fn is_punctuation(&self) -> bool {
-        self.is_graph() && !self.is_alnum()
-    }
-
-    /// Checks if the character is a valid hex digit
-    #[inline]
-    pub fn is_hex(&self) -> bool {
-        self.is_digit() || ((self.chr | 32u8) - b'a') < 6
-    }
+    /// Converts the string to ASCII lower case:
+    /// ASCII letters 'A' to 'Z' are mapped to 'a' to 'z',
+    /// but non-ASCII letters are unchanged.
+    fn into_ascii_lowercase(self) -> Self;
 }
 
-impl<'a> fmt::Show for Ascii {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (self.chr as char).fmt(f)
-    }
-}
+/// Extension methods for ASCII-subset only operations on string slices.
+#[stable(feature = "rust1", since = "1.0.0")]
+pub trait AsciiExt {
+    /// Container type for copied ASCII characters.
+    #[stable(feature = "rust1", since = "1.0.0")]
+    type Owned;
 
-/// Trait for converting into an ascii type.
-pub trait AsciiCast<T> {
-    /// Convert to an ascii type, fail on non-ASCII input.
-    #[inline]
-    fn to_ascii(&self) -> T {
-        assert!(self.is_ascii());
-        unsafe {self.to_ascii_nocheck()}
-    }
-
-    /// Convert to an ascii type, return None on non-ASCII input.
-    #[inline]
-    fn to_ascii_opt(&self) -> Option<T> {
-        if self.is_ascii() {
-            Some(unsafe { self.to_ascii_nocheck() })
-        } else {
-            None
-        }
-    }
-
-    /// Convert to an ascii type, not doing any range asserts
-    unsafe fn to_ascii_nocheck(&self) -> T;
-
-    /// Check if convertible to ascii
+    /// Checks if within the ASCII range.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::ascii::AsciiExt;
+    ///
+    /// let ascii = 'a';
+    /// let utf8 = '❤';
+    ///
+    /// assert_eq!(true, ascii.is_ascii());
+    /// assert_eq!(false, utf8.is_ascii())
+    /// ```
+    #[stable(feature = "rust1", since = "1.0.0")]
     fn is_ascii(&self) -> bool;
+
+    /// Makes a copy of the string in ASCII upper case.
+    ///
+    /// ASCII letters 'a' to 'z' are mapped to 'A' to 'Z',
+    /// but non-ASCII letters are unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::ascii::AsciiExt;
+    ///
+    /// let ascii = 'a';
+    /// let utf8 = '❤';
+    ///
+    /// assert_eq!('A', ascii.to_ascii_uppercase());
+    /// assert_eq!('❤', utf8.to_ascii_uppercase());
+    /// ```
+    #[stable(feature = "rust1", since = "1.0.0")]
+    fn to_ascii_uppercase(&self) -> Self::Owned;
+
+    /// Makes a copy of the string in ASCII lower case.
+    ///
+    /// ASCII letters 'A' to 'Z' are mapped to 'a' to 'z',
+    /// but non-ASCII letters are unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::ascii::AsciiExt;
+    ///
+    /// let ascii = 'A';
+    /// let utf8 = '❤';
+    ///
+    /// assert_eq!('a', ascii.to_ascii_lowercase());
+    /// assert_eq!('❤', utf8.to_ascii_lowercase());
+    /// ```
+    #[stable(feature = "rust1", since = "1.0.0")]
+    fn to_ascii_lowercase(&self) -> Self::Owned;
+
+    /// Checks that two strings are an ASCII case-insensitive match.
+    ///
+    /// Same as `to_ascii_lowercase(a) == to_ascii_lowercase(b)`,
+    /// but without allocating and copying temporary strings.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::ascii::AsciiExt;
+    ///
+    /// let ascii1 = 'A';
+    /// let ascii2 = 'a';
+    /// let ascii3 = 'A';
+    /// let ascii4 = 'z';
+    ///
+    /// assert_eq!(true, ascii1.eq_ignore_ascii_case(&ascii2));
+    /// assert_eq!(true, ascii1.eq_ignore_ascii_case(&ascii3));
+    /// assert_eq!(false, ascii1.eq_ignore_ascii_case(&ascii4));
+    /// ```
+    #[stable(feature = "rust1", since = "1.0.0")]
+    fn eq_ignore_ascii_case(&self, other: &Self) -> bool;
+
+    /// Converts this type to its ASCII upper case equivalent in-place.
+    ///
+    /// See `to_ascii_uppercase` for more information.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #![feature(ascii)]
+    /// use std::ascii::AsciiExt;
+    ///
+    /// let mut ascii = 'a';
+    ///
+    /// ascii.make_ascii_uppercase();
+    ///
+    /// assert_eq!('A', ascii);
+    /// ```
+    #[unstable(feature = "ascii")]
+    fn make_ascii_uppercase(&mut self);
+
+    /// Converts this type to its ASCII lower case equivalent in-place.
+    ///
+    /// See `to_ascii_lowercase` for more information.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #![feature(ascii)]
+    /// use std::ascii::AsciiExt;
+    ///
+    /// let mut ascii = 'A';
+    ///
+    /// ascii.make_ascii_lowercase();
+    ///
+    /// assert_eq!('a', ascii);
+    /// ```
+    #[unstable(feature = "ascii")]
+    fn make_ascii_lowercase(&mut self);
 }
 
-impl<'a> AsciiCast<&'a[Ascii]> for &'a [u8] {
-    #[inline]
-    unsafe fn to_ascii_nocheck(&self) -> &'a[Ascii] {
-        mem::transmute(*self)
-    }
-
-    #[inline]
-    fn is_ascii(&self) -> bool {
-        for b in self.iter() {
-            if !b.is_ascii() { return false; }
-        }
-        true
-    }
-}
-
-impl<'a> AsciiCast<&'a [Ascii]> for &'a str {
-    #[inline]
-    unsafe fn to_ascii_nocheck(&self) -> &'a [Ascii] {
-        mem::transmute(*self)
-    }
+#[stable(feature = "rust1", since = "1.0.0")]
+impl AsciiExt for str {
+    type Owned = String;
 
     #[inline]
     fn is_ascii(&self) -> bool {
         self.bytes().all(|b| b.is_ascii())
     }
-}
 
-impl AsciiCast<Ascii> for u8 {
     #[inline]
-    unsafe fn to_ascii_nocheck(&self) -> Ascii {
-        Ascii{ chr: *self }
+    fn to_ascii_uppercase(&self) -> String {
+        self.to_string().into_ascii_uppercase()
     }
 
     #[inline]
-    fn is_ascii(&self) -> bool {
-        *self & 128 == 0u8
-    }
-}
-
-impl AsciiCast<Ascii> for char {
-    #[inline]
-    unsafe fn to_ascii_nocheck(&self) -> Ascii {
-        Ascii{ chr: *self as u8 }
-    }
-
-    #[inline]
-    fn is_ascii(&self) -> bool {
-        *self as u32 - ('\x7F' as u32 & *self as u32) == 0
-    }
-}
-
-/// Trait for copyless casting to an ascii vector.
-pub trait OwnedAsciiCast {
-    /// Check if convertible to ascii
-    fn is_ascii(&self) -> bool;
-
-    /// Take ownership and cast to an ascii vector. Fail on non-ASCII input.
-    #[inline]
-    fn into_ascii(self) -> Vec<Ascii> {
-        assert!(self.is_ascii());
-        unsafe {self.into_ascii_nocheck()}
-    }
-
-    /// Take ownership and cast to an ascii vector. Return None on non-ASCII input.
-    #[inline]
-    fn into_ascii_opt(self) -> Option<Vec<Ascii>> {
-        if self.is_ascii() {
-            Some(unsafe { self.into_ascii_nocheck() })
-        } else {
-            None
-        }
-    }
-
-    /// Take ownership and cast to an ascii vector.
-    /// Does not perform validation checks.
-    unsafe fn into_ascii_nocheck(self) -> Vec<Ascii>;
-}
-
-impl OwnedAsciiCast for String {
-    #[inline]
-    fn is_ascii(&self) -> bool {
-        self.as_slice().is_ascii()
-    }
-
-    #[inline]
-    unsafe fn into_ascii_nocheck(self) -> Vec<Ascii> {
-        let v: Vec<u8> = mem::transmute(self);
-        v.into_ascii_nocheck()
-    }
-}
-
-impl OwnedAsciiCast for Vec<u8> {
-    #[inline]
-    fn is_ascii(&self) -> bool {
-        self.as_slice().is_ascii()
-    }
-
-    #[inline]
-    unsafe fn into_ascii_nocheck(self) -> Vec<Ascii> {
-        mem::transmute(self)
-    }
-}
-
-/// Trait for converting an ascii type to a string. Needed to convert
-/// `&[Ascii]` to `&str`.
-pub trait AsciiStr {
-    /// Convert to a string.
-    fn as_str_ascii<'a>(&'a self) -> &'a str;
-
-    /// Convert to vector representing a lower cased ascii string.
-    fn to_lower(&self) -> Vec<Ascii>;
-
-    /// Convert to vector representing a upper cased ascii string.
-    fn to_upper(&self) -> Vec<Ascii>;
-
-    /// Compares two Ascii strings ignoring case.
-    fn eq_ignore_case(self, other: &[Ascii]) -> bool;
-}
-
-impl<'a> AsciiStr for &'a [Ascii] {
-    #[inline]
-    fn as_str_ascii<'a>(&'a self) -> &'a str {
-        unsafe { mem::transmute(*self) }
-    }
-
-    #[inline]
-    fn to_lower(&self) -> Vec<Ascii> {
-        self.iter().map(|a| a.to_lower()).collect()
-    }
-
-    #[inline]
-    fn to_upper(&self) -> Vec<Ascii> {
-        self.iter().map(|a| a.to_upper()).collect()
-    }
-
-    #[inline]
-    fn eq_ignore_case(self, other: &[Ascii]) -> bool {
-        self.iter().zip(other.iter()).all(|(&a, &b)| a.eq_ignore_case(b))
-    }
-}
-
-impl IntoStr for Vec<Ascii> {
-    #[inline]
-    fn into_string(self) -> String {
-        unsafe {
-            let s: &str = mem::transmute(self.as_slice());
-            String::from_str(s)
-        }
-    }
-}
-
-/// Trait to convert to an owned byte vector by consuming self
-pub trait IntoBytes {
-    /// Converts to an owned byte vector by consuming self
-    fn into_bytes(self) -> Vec<u8>;
-}
-
-impl IntoBytes for Vec<Ascii> {
-    fn into_bytes(self) -> Vec<u8> {
-        unsafe { mem::transmute(self) }
-    }
-}
-
-
-/// Extension methods for ASCII-subset only operations on owned strings
-pub trait OwnedAsciiExt {
-    /// Convert the string to ASCII upper case:
-    /// ASCII letters 'a' to 'z' are mapped to 'A' to 'Z',
-    /// but non-ASCII letters are unchanged.
-    fn into_ascii_upper(self) -> Self;
-
-    /// Convert the string to ASCII lower case:
-    /// ASCII letters 'A' to 'Z' are mapped to 'a' to 'z',
-    /// but non-ASCII letters are unchanged.
-    fn into_ascii_lower(self) -> Self;
-}
-
-/// Extension methods for ASCII-subset only operations on string slices
-pub trait AsciiExt<T> {
-    /// Makes a copy of the string in ASCII upper case:
-    /// ASCII letters 'a' to 'z' are mapped to 'A' to 'Z',
-    /// but non-ASCII letters are unchanged.
-    fn to_ascii_upper(&self) -> T;
-
-    /// Makes a copy of the string in ASCII lower case:
-    /// ASCII letters 'A' to 'Z' are mapped to 'a' to 'z',
-    /// but non-ASCII letters are unchanged.
-    fn to_ascii_lower(&self) -> T;
-
-    /// Check that two strings are an ASCII case-insensitive match.
-    /// Same as `to_ascii_lower(a) == to_ascii_lower(b)`,
-    /// but without allocating and copying temporary strings.
-    fn eq_ignore_ascii_case(&self, other: Self) -> bool;
-}
-
-impl<'a> AsciiExt<String> for &'a str {
-    #[inline]
-    fn to_ascii_upper(&self) -> String {
-        // Vec<u8>::to_ascii_upper() preserves the UTF-8 invariant.
-        unsafe { str::raw::from_utf8_owned(self.as_bytes().to_ascii_upper()) }
-    }
-
-    #[inline]
-    fn to_ascii_lower(&self) -> String {
-        // Vec<u8>::to_ascii_lower() preserves the UTF-8 invariant.
-        unsafe { str::raw::from_utf8_owned(self.as_bytes().to_ascii_lower()) }
+    fn to_ascii_lowercase(&self) -> String {
+        self.to_string().into_ascii_lowercase()
     }
 
     #[inline]
     fn eq_ignore_ascii_case(&self, other: &str) -> bool {
         self.as_bytes().eq_ignore_ascii_case(other.as_bytes())
     }
+
+    fn make_ascii_uppercase(&mut self) {
+        let me: &mut [u8] = unsafe { mem::transmute(self) };
+        me.make_ascii_uppercase()
+    }
+
+    fn make_ascii_lowercase(&mut self) {
+        let me: &mut [u8] = unsafe { mem::transmute(self) };
+        me.make_ascii_lowercase()
+    }
 }
 
 impl OwnedAsciiExt for String {
     #[inline]
-    fn into_ascii_upper(self) -> String {
-        // Vec<u8>::into_ascii_upper() preserves the UTF-8 invariant.
-        unsafe { str::raw::from_utf8_owned(self.into_bytes().into_ascii_upper()) }
+    fn into_ascii_uppercase(self) -> String {
+        // Vec<u8>::into_ascii_uppercase() preserves the UTF-8 invariant.
+        unsafe { String::from_utf8_unchecked(self.into_bytes().into_ascii_uppercase()) }
     }
 
     #[inline]
-    fn into_ascii_lower(self) -> String {
-        // Vec<u8>::into_ascii_lower() preserves the UTF-8 invariant.
-        unsafe { str::raw::from_utf8_owned(self.into_bytes().into_ascii_lower()) }
+    fn into_ascii_lowercase(self) -> String {
+        // Vec<u8>::into_ascii_lowercase() preserves the UTF-8 invariant.
+        unsafe { String::from_utf8_unchecked(self.into_bytes().into_ascii_lowercase()) }
     }
 }
 
-impl<'a> AsciiExt<Vec<u8>> for &'a [u8] {
+#[stable(feature = "rust1", since = "1.0.0")]
+impl AsciiExt for [u8] {
+    type Owned = Vec<u8>;
     #[inline]
-    fn to_ascii_upper(&self) -> Vec<u8> {
-        self.iter().map(|&byte| ASCII_UPPER_MAP[byte as uint]).collect()
+    fn is_ascii(&self) -> bool {
+        self.iter().all(|b| b.is_ascii())
     }
 
     #[inline]
-    fn to_ascii_lower(&self) -> Vec<u8> {
-        self.iter().map(|&byte| ASCII_LOWER_MAP[byte as uint]).collect()
+    fn to_ascii_uppercase(&self) -> Vec<u8> {
+        self.to_vec().into_ascii_uppercase()
+    }
+
+    #[inline]
+    fn to_ascii_lowercase(&self) -> Vec<u8> {
+        self.to_vec().into_ascii_lowercase()
     }
 
     #[inline]
     fn eq_ignore_ascii_case(&self, other: &[u8]) -> bool {
         self.len() == other.len() &&
-            self.iter().zip(other.iter()).all(
-            |(byte_self, byte_other)| {
-                ASCII_LOWER_MAP[*byte_self as uint] ==
-                    ASCII_LOWER_MAP[*byte_other as uint]
-            })
+        self.iter().zip(other).all(|(a, b)| {
+            a.eq_ignore_ascii_case(b)
+        })
+    }
+
+    fn make_ascii_uppercase(&mut self) {
+        for byte in self {
+            byte.make_ascii_uppercase();
+        }
+    }
+
+    fn make_ascii_lowercase(&mut self) {
+        for byte in self {
+            byte.make_ascii_lowercase();
+        }
     }
 }
 
 impl OwnedAsciiExt for Vec<u8> {
     #[inline]
-    fn into_ascii_upper(mut self) -> Vec<u8> {
-        for byte in self.mut_iter() {
-            *byte = ASCII_UPPER_MAP[*byte as uint];
-        }
+    fn into_ascii_uppercase(mut self) -> Vec<u8> {
+        self.make_ascii_uppercase();
         self
     }
 
     #[inline]
-    fn into_ascii_lower(mut self) -> Vec<u8> {
-        for byte in self.mut_iter() {
-            *byte = ASCII_LOWER_MAP[*byte as uint];
-        }
+    fn into_ascii_lowercase(mut self) -> Vec<u8> {
+        self.make_ascii_lowercase();
         self
     }
 }
 
+#[stable(feature = "rust1", since = "1.0.0")]
+impl AsciiExt for u8 {
+    type Owned = u8;
+    #[inline]
+    fn is_ascii(&self) -> bool { *self & 128 == 0 }
+    #[inline]
+    fn to_ascii_uppercase(&self) -> u8 { ASCII_UPPERCASE_MAP[*self as usize] }
+    #[inline]
+    fn to_ascii_lowercase(&self) -> u8 { ASCII_LOWERCASE_MAP[*self as usize] }
+    #[inline]
+    fn eq_ignore_ascii_case(&self, other: &u8) -> bool {
+        self.to_ascii_lowercase() == other.to_ascii_lowercase()
+    }
+    #[inline]
+    fn make_ascii_uppercase(&mut self) { *self = self.to_ascii_uppercase(); }
+    #[inline]
+    fn make_ascii_lowercase(&mut self) { *self = self.to_ascii_lowercase(); }
+}
 
-pub static ASCII_LOWER_MAP: [u8, ..256] = [
+#[stable(feature = "rust1", since = "1.0.0")]
+impl AsciiExt for char {
+    type Owned = char;
+    #[inline]
+    fn is_ascii(&self) -> bool {
+        *self as u32 <= 0x7F
+    }
+
+    #[inline]
+    fn to_ascii_uppercase(&self) -> char {
+        if self.is_ascii() {
+            (*self as u8).to_ascii_uppercase() as char
+        } else {
+            *self
+        }
+    }
+
+    #[inline]
+    fn to_ascii_lowercase(&self) -> char {
+        if self.is_ascii() {
+            (*self as u8).to_ascii_lowercase() as char
+        } else {
+            *self
+        }
+    }
+
+    #[inline]
+    fn eq_ignore_ascii_case(&self, other: &char) -> bool {
+        self.to_ascii_lowercase() == other.to_ascii_lowercase()
+    }
+
+    #[inline]
+    fn make_ascii_uppercase(&mut self) { *self = self.to_ascii_uppercase(); }
+    #[inline]
+    fn make_ascii_lowercase(&mut self) { *self = self.to_ascii_lowercase(); }
+}
+
+/// An iterator over the escaped version of a byte, constructed via
+/// `std::ascii::escape_default`.
+#[stable(feature = "rust1", since = "1.0.0")]
+pub struct EscapeDefault {
+    range: Range<usize>,
+    data: [u8; 4],
+}
+
+/// Returns an iterator that produces an escaped version of a `u8`.
+///
+/// The default is chosen with a bias toward producing literals that are
+/// legal in a variety of languages, including C++11 and similar C-family
+/// languages. The exact rules are:
+///
+/// - Tab, CR and LF are escaped as '\t', '\r' and '\n' respectively.
+/// - Single-quote, double-quote and backslash chars are backslash-escaped.
+/// - Any other chars in the range [0x20,0x7e] are not escaped.
+/// - Any other chars are given hex escapes of the form '\xNN'.
+/// - Unicode escapes are never generated by this function.
+///
+/// # Examples
+///
+/// ```
+/// use std::ascii;
+///
+/// let escaped = ascii::escape_default(b'0').next().unwrap();
+/// assert_eq!(b'0', escaped);
+///
+/// let mut escaped = ascii::escape_default(b'\t');
+///
+/// assert_eq!(b'\\', escaped.next().unwrap());
+/// assert_eq!(b't', escaped.next().unwrap());
+/// ```
+#[stable(feature = "rust1", since = "1.0.0")]
+pub fn escape_default(c: u8) -> EscapeDefault {
+    let (data, len) = match c {
+        b'\t' => ([b'\\', b't', 0, 0], 2),
+        b'\r' => ([b'\\', b'r', 0, 0], 2),
+        b'\n' => ([b'\\', b'n', 0, 0], 2),
+        b'\\' => ([b'\\', b'\\', 0, 0], 2),
+        b'\'' => ([b'\\', b'\'', 0, 0], 2),
+        b'"' => ([b'\\', b'"', 0, 0], 2),
+        b'\x20' ... b'\x7e' => ([c, 0, 0, 0], 1),
+        _ => ([b'\\', b'x', hexify(c >> 4), hexify(c & 0xf)], 4),
+    };
+
+    return EscapeDefault { range: (0.. len), data: data };
+
+    fn hexify(b: u8) -> u8 {
+        match b {
+            0 ... 9 => b'0' + b,
+            _ => b'a' + b - 10,
+        }
+    }
+}
+
+#[stable(feature = "rust1", since = "1.0.0")]
+impl Iterator for EscapeDefault {
+    type Item = u8;
+    fn next(&mut self) -> Option<u8> { self.range.next().map(|i| self.data[i]) }
+    fn size_hint(&self) -> (usize, Option<usize>) { self.range.size_hint() }
+}
+#[stable(feature = "rust1", since = "1.0.0")]
+impl DoubleEndedIterator for EscapeDefault {
+    fn next_back(&mut self) -> Option<u8> {
+        self.range.next_back().map(|i| self.data[i])
+    }
+}
+#[stable(feature = "rust1", since = "1.0.0")]
+impl ExactSizeIterator for EscapeDefault {}
+
+static ASCII_LOWERCASE_MAP: [u8; 256] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
     0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
@@ -519,7 +422,7 @@ pub static ASCII_LOWER_MAP: [u8, ..256] = [
     0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff,
 ];
 
-pub static ASCII_UPPER_MAP: [u8, ..256] = [
+static ASCII_UPPERCASE_MAP: [u8; 256] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
     0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
@@ -561,211 +464,76 @@ pub static ASCII_UPPER_MAP: [u8, ..256] = [
 
 #[cfg(test)]
 mod tests {
-    use prelude::*;
+    use prelude::v1::*;
     use super::*;
     use char::from_u32;
-    use vec::Vec;
-    use str::StrSlice;
-
-    macro_rules! v2ascii (
-        ( [$($e:expr),*]) => (&[$(Ascii{chr:$e}),*]);
-        (&[$($e:expr),*]) => (&[$(Ascii{chr:$e}),*]);
-    )
-
-    macro_rules! vec2ascii (
-        ($($e:expr),*) => (Vec::from_slice([$(Ascii{chr:$e}),*]));
-    )
 
     #[test]
     fn test_ascii() {
-        assert_eq!(65u8.to_ascii().to_byte(), 65u8);
-        assert_eq!(65u8.to_ascii().to_char(), 'A');
-        assert_eq!('A'.to_ascii().to_char(), 'A');
-        assert_eq!('A'.to_ascii().to_byte(), 65u8);
-
-        assert_eq!('A'.to_ascii().to_lower().to_char(), 'a');
-        assert_eq!('Z'.to_ascii().to_lower().to_char(), 'z');
-        assert_eq!('a'.to_ascii().to_upper().to_char(), 'A');
-        assert_eq!('z'.to_ascii().to_upper().to_char(), 'Z');
-
-        assert_eq!('@'.to_ascii().to_lower().to_char(), '@');
-        assert_eq!('['.to_ascii().to_lower().to_char(), '[');
-        assert_eq!('`'.to_ascii().to_upper().to_char(), '`');
-        assert_eq!('{'.to_ascii().to_upper().to_char(), '{');
-
-        assert!('0'.to_ascii().is_digit());
-        assert!('9'.to_ascii().is_digit());
-        assert!(!'/'.to_ascii().is_digit());
-        assert!(!':'.to_ascii().is_digit());
-
-        assert!((0x1fu8).to_ascii().is_control());
-        assert!(!' '.to_ascii().is_control());
-        assert!((0x7fu8).to_ascii().is_control());
-
         assert!("banana".chars().all(|c| c.is_ascii()));
         assert!(!"ประเทศไทย中华Việt Nam".chars().all(|c| c.is_ascii()));
     }
 
     #[test]
     fn test_ascii_vec() {
-        let test = &[40u8, 32u8, 59u8];
-        let b: &[_] = v2ascii!([40, 32, 59]);
-        assert_eq!(test.to_ascii(), b);
-        assert_eq!("( ;".to_ascii(), b);
-        let v = vec![40u8, 32u8, 59u8];
-        assert_eq!(v.as_slice().to_ascii(), b);
-        assert_eq!("( ;".to_string().as_slice().to_ascii(), b);
-
-        assert_eq!("abCDef&?#".to_ascii().to_lower().into_string(), "abcdef&?#".to_string());
-        assert_eq!("abCDef&?#".to_ascii().to_upper().into_string(), "ABCDEF&?#".to_string());
-
-        assert_eq!("".to_ascii().to_lower().into_string(), "".to_string());
-        assert_eq!("YMCA".to_ascii().to_lower().into_string(), "ymca".to_string());
-        assert_eq!("abcDEFxyz:.;".to_ascii().to_upper().into_string(), "ABCDEFXYZ:.;".to_string());
-
-        assert!("aBcDeF&?#".to_ascii().eq_ignore_case("AbCdEf&?#".to_ascii()));
-
         assert!("".is_ascii());
         assert!("a".is_ascii());
-        assert!(!"\u2009".is_ascii());
-
+        assert!(!"\u{2009}".is_ascii());
     }
 
     #[test]
-    fn test_ascii_vec_ng() {
-        assert_eq!("abCDef&?#".to_ascii().to_lower().into_string(), "abcdef&?#".to_string());
-        assert_eq!("abCDef&?#".to_ascii().to_upper().into_string(), "ABCDEF&?#".to_string());
-        assert_eq!("".to_ascii().to_lower().into_string(), "".to_string());
-        assert_eq!("YMCA".to_ascii().to_lower().into_string(), "ymca".to_string());
-        assert_eq!("abcDEFxyz:.;".to_ascii().to_upper().into_string(), "ABCDEFXYZ:.;".to_string());
-    }
+    fn test_to_ascii_uppercase() {
+        assert_eq!("url()URL()uRl()ürl".to_ascii_uppercase(), "URL()URL()URL()üRL");
+        assert_eq!("hıKß".to_ascii_uppercase(), "HıKß");
 
-    #[test]
-    fn test_owned_ascii_vec() {
-        assert_eq!(("( ;".to_string()).into_ascii(), vec2ascii![40, 32, 59]);
-        assert_eq!((vec![40u8, 32u8, 59u8]).into_ascii(), vec2ascii![40, 32, 59]);
-    }
-
-    #[test]
-    fn test_ascii_as_str() {
-        let v = v2ascii!([40, 32, 59]);
-        assert_eq!(v.as_str_ascii(), "( ;");
-    }
-
-    #[test]
-    fn test_ascii_into_string() {
-        assert_eq!(vec2ascii![40, 32, 59].into_string(), "( ;".to_string());
-        assert_eq!(vec2ascii!(40, 32, 59).into_string(), "( ;".to_string());
-    }
-
-    #[test]
-    fn test_ascii_to_bytes() {
-        assert_eq!(vec2ascii![40, 32, 59].into_bytes(), vec![40u8, 32u8, 59u8]);
-    }
-
-    #[test] #[should_fail]
-    fn test_ascii_vec_fail_u8_slice()  { (&[127u8, 128u8, 255u8]).to_ascii(); }
-
-    #[test] #[should_fail]
-    fn test_ascii_vec_fail_str_slice() { "zoä华".to_ascii(); }
-
-    #[test] #[should_fail]
-    fn test_ascii_fail_u8_slice() { 255u8.to_ascii(); }
-
-    #[test] #[should_fail]
-    fn test_ascii_fail_char_slice() { 'λ'.to_ascii(); }
-
-    #[test]
-    fn test_opt() {
-        assert_eq!(65u8.to_ascii_opt(), Some(Ascii { chr: 65u8 }));
-        assert_eq!(255u8.to_ascii_opt(), None);
-
-        assert_eq!('A'.to_ascii_opt(), Some(Ascii { chr: 65u8 }));
-        assert_eq!('λ'.to_ascii_opt(), None);
-
-        assert_eq!("zoä华".to_ascii_opt(), None);
-
-        let test1 = &[127u8, 128u8, 255u8];
-        assert_eq!((test1).to_ascii_opt(), None);
-
-        let v = [40u8, 32u8, 59u8];
-        let v2: &[_] = v2ascii!(&[40, 32, 59]);
-        assert_eq!(v.to_ascii_opt(), Some(v2));
-        let v = [127u8, 128u8, 255u8];
-        assert_eq!(v.to_ascii_opt(), None);
-
-        let v = "( ;";
-        assert_eq!(v.to_ascii_opt(), Some(v2));
-        assert_eq!("zoä华".to_ascii_opt(), None);
-
-        assert_eq!((vec![40u8, 32u8, 59u8]).into_ascii_opt(), Some(vec2ascii![40, 32, 59]));
-        assert_eq!((vec![127u8, 128u8, 255u8]).into_ascii_opt(), None);
-
-        assert_eq!(("( ;".to_string()).into_ascii_opt(), Some(vec2ascii![40, 32, 59]));
-        assert_eq!(("zoä华".to_string()).into_ascii_opt(), None);
-    }
-
-    #[test]
-    fn test_to_ascii_upper() {
-        assert_eq!("url()URL()uRl()ürl".to_ascii_upper(), "URL()URL()URL()üRL".to_string());
-        assert_eq!("hıKß".to_ascii_upper(), "HıKß".to_string());
-
-        let mut i = 0;
-        while i <= 500 {
+        for i in 0..501 {
             let upper = if 'a' as u32 <= i && i <= 'z' as u32 { i + 'A' as u32 - 'a' as u32 }
                         else { i };
-            assert_eq!((from_u32(i).unwrap()).to_string().as_slice().to_ascii_upper(),
-                       (from_u32(upper).unwrap()).to_string())
-            i += 1;
+            assert_eq!((from_u32(i).unwrap()).to_string().to_ascii_uppercase(),
+                       (from_u32(upper).unwrap()).to_string());
         }
     }
 
     #[test]
-    fn test_to_ascii_lower() {
-        assert_eq!("url()URL()uRl()Ürl".to_ascii_lower(), "url()url()url()Ürl".to_string());
+    fn test_to_ascii_lowercase() {
+        assert_eq!("url()URL()uRl()Ürl".to_ascii_lowercase(), "url()url()url()Ürl");
         // Dotted capital I, Kelvin sign, Sharp S.
-        assert_eq!("HİKß".to_ascii_lower(), "hİKß".to_string());
+        assert_eq!("HİKß".to_ascii_lowercase(), "hİKß");
 
-        let mut i = 0;
-        while i <= 500 {
+        for i in 0..501 {
             let lower = if 'A' as u32 <= i && i <= 'Z' as u32 { i + 'a' as u32 - 'A' as u32 }
                         else { i };
-            assert_eq!((from_u32(i).unwrap()).to_string().as_slice().to_ascii_lower(),
-                       (from_u32(lower).unwrap()).to_string())
-            i += 1;
+            assert_eq!((from_u32(i).unwrap()).to_string().to_ascii_lowercase(),
+                       (from_u32(lower).unwrap()).to_string());
         }
     }
 
     #[test]
-    fn test_into_ascii_upper() {
-        assert_eq!(("url()URL()uRl()ürl".to_string()).into_ascii_upper(),
+    fn test_into_ascii_uppercase() {
+        assert_eq!(("url()URL()uRl()ürl".to_string()).into_ascii_uppercase(),
                    "URL()URL()URL()üRL".to_string());
-        assert_eq!(("hıKß".to_string()).into_ascii_upper(), "HıKß".to_string());
+        assert_eq!(("hıKß".to_string()).into_ascii_uppercase(), "HıKß");
 
-        let mut i = 0;
-        while i <= 500 {
+        for i in 0..501 {
             let upper = if 'a' as u32 <= i && i <= 'z' as u32 { i + 'A' as u32 - 'a' as u32 }
                         else { i };
-            assert_eq!((from_u32(i).unwrap()).to_string().into_ascii_upper(),
-                       (from_u32(upper).unwrap()).to_string())
-            i += 1;
+            assert_eq!((from_u32(i).unwrap()).to_string().into_ascii_uppercase(),
+                       (from_u32(upper).unwrap()).to_string());
         }
     }
 
     #[test]
-    fn test_into_ascii_lower() {
-        assert_eq!(("url()URL()uRl()Ürl".to_string()).into_ascii_lower(),
-                   "url()url()url()Ürl".to_string());
+    fn test_into_ascii_lowercase() {
+        assert_eq!(("url()URL()uRl()Ürl".to_string()).into_ascii_lowercase(),
+                   "url()url()url()Ürl");
         // Dotted capital I, Kelvin sign, Sharp S.
-        assert_eq!(("HİKß".to_string()).into_ascii_lower(), "hİKß".to_string());
+        assert_eq!(("HİKß".to_string()).into_ascii_lowercase(), "hİKß");
 
-        let mut i = 0;
-        while i <= 500 {
+        for i in 0..501 {
             let lower = if 'A' as u32 <= i && i <= 'Z' as u32 { i + 'a' as u32 - 'A' as u32 }
                         else { i };
-            assert_eq!((from_u32(i).unwrap()).to_string().into_ascii_lower(),
-                       (from_u32(lower).unwrap()).to_string())
-            i += 1;
+            assert_eq!((from_u32(i).unwrap()).to_string().into_ascii_lowercase(),
+                       (from_u32(lower).unwrap()).to_string());
         }
     }
 
@@ -779,26 +547,11 @@ mod tests {
         assert!(!"K".eq_ignore_ascii_case("k"));
         assert!(!"ß".eq_ignore_ascii_case("s"));
 
-        let mut i = 0;
-        while i <= 500 {
-            let c = i;
-            let lower = if 'A' as u32 <= c && c <= 'Z' as u32 { c + 'a' as u32 - 'A' as u32 }
-                        else { c };
-            assert!((from_u32(i).unwrap()).to_string().as_slice().eq_ignore_ascii_case(
-                    (from_u32(lower).unwrap()).to_string().as_slice()));
-            i += 1;
+        for i in 0..501 {
+            let lower = if 'A' as u32 <= i && i <= 'Z' as u32 { i + 'a' as u32 - 'A' as u32 }
+                        else { i };
+            assert!((from_u32(i).unwrap()).to_string().eq_ignore_ascii_case(
+                    &from_u32(lower).unwrap().to_string()));
         }
-    }
-
-    #[test]
-    fn test_to_string() {
-        let s = Ascii{ chr: b't' }.to_string();
-        assert_eq!(s, "t".to_string());
-    }
-
-    #[test]
-    fn test_show() {
-        let c = Ascii { chr: b't' };
-        assert_eq!(format!("{}", c), "t".to_string());
     }
 }

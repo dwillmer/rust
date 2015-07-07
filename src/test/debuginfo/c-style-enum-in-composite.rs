@@ -9,24 +9,22 @@
 // except according to those terms.
 
 // ignore-tidy-linelength
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
-// gdb-command:finish
 
 // gdb-command:print tuple_interior_padding
-// gdb-check:$1 = {0, OneHundred}
+// gdb-check:$1 = {__0 = 0, __1 = OneHundred}
 
 // gdb-command:print tuple_padding_at_end
-// gdb-check:$2 = {{1, OneThousand}, 2}
+// gdb-check:$2 = {__0 = {__0 = 1, __1 = OneThousand}, __1 = 2}
 
 // gdb-command:print tuple_different_enums
-// gdb-check:$3 = {OneThousand, MountainView, OneMillion, Vienna}
+// gdb-check:$3 = {__0 = OneThousand, __1 = MountainView, __2 = OneMillion, __3 = Vienna}
 
 // gdb-command:print padded_struct
 // gdb-check:$4 = {a = 3, b = OneMillion, c = 4, d = Toronto, e = 5}
@@ -38,7 +36,7 @@
 // gdb-check:$6 = {a = OneMillion, b = MountainView, c = OneThousand, d = Toronto}
 
 // gdb-command:print struct_with_drop
-// gdb-check:$7 = {{a = OneHundred, b = Vienna}, 9}
+// gdb-check:$7 = {__0 = {a = OneHundred, b = Vienna}, __1 = 9}
 
 
 // === LLDB TESTS ==================================================================================
@@ -65,7 +63,11 @@
 // lldb-command:print struct_with_drop
 // lldb-check:[...]$6 = (StructWithDrop { a: OneHundred, b: Vienna }, 9)
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
+#![omit_gdb_pretty_printer_section]
+
+use self::AnEnum::{OneHundred, OneThousand, OneMillion};
+use self::AnotherEnum::{MountainView, Toronto, Vienna};
 
 enum AnEnum {
     OneHundred = 100,

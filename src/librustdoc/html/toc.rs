@@ -14,7 +14,7 @@ use std::fmt;
 use std::string::String;
 
 /// A (recursive) table of contents
-#[deriving(PartialEq)]
+#[derive(PartialEq)]
 pub struct Toc {
     /// The levels are strictly decreasing, i.e.
     ///
@@ -24,19 +24,21 @@ pub struct Toc {
     /// both of which end up in the same `Toc` as they have the same
     /// parent (Main).
     ///
+    /// ```text
     /// # Main
     /// ### A
     /// ## B
+    /// ```
     entries: Vec<TocEntry>
 }
 
 impl Toc {
-    fn count_entries_with_level(&self, level: u32) -> uint {
+    fn count_entries_with_level(&self, level: u32) -> usize {
         self.entries.iter().filter(|e| e.level == level).count()
     }
 }
 
-#[deriving(PartialEq)]
+#[derive(PartialEq)]
 pub struct TocEntry {
     level: u32,
     sec_number: String,
@@ -46,7 +48,7 @@ pub struct TocEntry {
 }
 
 /// Progressive construction of a table of contents.
-#[deriving(PartialEq)]
+#[derive(PartialEq)]
 pub struct TocBuilder {
     top_level: Toc,
     /// The current hierarchy of parent headings, the levels are
@@ -78,6 +80,7 @@ impl TocBuilder {
     ///
     /// Example:
     ///
+    /// ```text
     /// ## A
     /// # B
     /// # C
@@ -86,6 +89,7 @@ impl TocBuilder {
     /// ### F
     /// #### G
     /// ### H
+    /// ```
     ///
     /// If we are considering H (i.e. level 3), then A and B are in
     /// self.top_level, D is in C.children, and C, E, F, G are in
@@ -141,8 +145,7 @@ impl TocBuilder {
                     (0, &self.top_level)
                 }
                 Some(entry) => {
-                    sec_number = String::from_str(entry.sec_number
-                                                       .as_slice());
+                    sec_number = entry.sec_number.clone();
                     sec_number.push_str(".");
                     (entry.level, &entry.children)
                 }
@@ -150,11 +153,11 @@ impl TocBuilder {
             // fill in any missing zeros, e.g. for
             // # Foo (1)
             // ### Bar (1.0.1)
-            for _ in range(toc_level, level - 1) {
+            for _ in toc_level..level - 1 {
                 sec_number.push_str("0.");
             }
             let number = toc.count_entries_with_level(level);
-            sec_number.push_str(format!("{}", number + 1).as_slice())
+            sec_number.push_str(&format!("{}", number + 1))
         }
 
         self.chain.push(TocEntry {
@@ -167,15 +170,21 @@ impl TocBuilder {
 
         // get the thing we just pushed, so we can borrow the string
         // out of it with the right lifetime
-        let just_inserted = self.chain.mut_last().unwrap();
-        just_inserted.sec_number.as_slice()
+        let just_inserted = self.chain.last_mut().unwrap();
+        &just_inserted.sec_number
     }
 }
 
-impl fmt::Show for Toc {
+impl fmt::Debug for Toc {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+impl fmt::Display for Toc {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         try!(write!(fmt, "<ul>"));
-        for entry in self.entries.iter() {
+        for entry in &self.entries {
             // recursively format this table of contents (the
             // `{children}` is the key).
             try!(write!(fmt,
@@ -189,7 +198,7 @@ impl fmt::Show for Toc {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::{TocBuilder, Toc, TocEntry};
 
     #[test]

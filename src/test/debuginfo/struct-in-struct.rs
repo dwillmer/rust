@@ -9,16 +9,13 @@
 // except according to those terms.
 
 // ignore-tidy-linelength
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:set print pretty off
-// gdb-command:rbreak zzz
 // gdb-command:run
-// gdb-command:finish
 
 // gdb-command:print three_simple_structs
 // gdb-check:$1 = {x = {x = 1}, y = {x = 2}, z = {x = 3}}
@@ -58,7 +55,8 @@
 // lldb-command:print tree
 // lldb-check:[...]$7 = Tree { x: Simple { x: 25 }, y: InternalPaddingParent { x: InternalPadding { x: 26, y: 27 }, y: InternalPadding { x: 28, y: 29 }, z: InternalPadding { x: 30, y: 31 } }, z: BagInBag { x: Bag { x: Simple { x: 32 } } } }
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
+#![omit_gdb_pretty_printer_section]
 
 struct Simple {
     x: i32

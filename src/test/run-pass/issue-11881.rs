@@ -8,27 +8,30 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+
+#![feature(rustc_private)]
+
 extern crate rbml;
 extern crate serialize;
 
-use std::io;
-use std::io::{IoError, IoResult, SeekStyle};
+use std::io::Cursor;
+use std::io::prelude::*;
+use std::fmt;
 use std::slice;
 
 use serialize::{Encodable, Encoder};
 use serialize::json;
 
 use rbml::writer;
-use rbml::io::SeekableMemWriter;
 
-#[deriving(Encodable)]
+#[derive(Encodable)]
 struct Foo {
     baz: bool,
 }
 
-#[deriving(Encodable)]
+#[derive(Encodable)]
 struct Bar {
-    froboz: uint,
+    froboz: usize,
 }
 
 enum WireProtocol {
@@ -37,27 +40,20 @@ enum WireProtocol {
     // ...
 }
 
-fn encode_json<'a,
-               T: Encodable<json::Encoder<'a>,
-                            std::io::IoError>>(val: &T,
-                                               wr: &'a mut SeekableMemWriter) {
-    let mut encoder = json::Encoder::new(wr);
-    val.encode(&mut encoder);
+fn encode_json<T: Encodable>(val: &T, wr: &mut Cursor<Vec<u8>>) {
+    write!(wr, "{}", json::as_json(val));
 }
-fn encode_rbml<'a,
-               T: Encodable<writer::Encoder<'a, SeekableMemWriter>,
-                            std::io::IoError>>(val: &T,
-                                               wr: &'a mut SeekableMemWriter) {
+fn encode_rbml<T: Encodable>(val: &T, wr: &mut Cursor<Vec<u8>>) {
     let mut encoder = writer::Encoder::new(wr);
     val.encode(&mut encoder);
 }
 
 pub fn main() {
     let target = Foo{baz: false,};
-    let mut wr = SeekableMemWriter::new();
-    let proto = JSON;
+    let mut wr = Cursor::new(Vec::new());
+    let proto = WireProtocol::JSON;
     match proto {
-        JSON => encode_json(&target, &mut wr),
-        RBML => encode_rbml(&target, &mut wr)
+        WireProtocol::JSON => encode_json(&target, &mut wr),
+        WireProtocol::RBML => encode_rbml(&target, &mut wr)
     }
 }

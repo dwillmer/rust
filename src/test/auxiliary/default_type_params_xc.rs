@@ -8,10 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(default_type_params)]
-
 pub struct Heap;
 
 pub struct FakeHeap;
 
-pub struct FakeVec<T, A = FakeHeap>;
+pub struct FakeVec<T, A = FakeHeap> { pub f: Option<(T,A)> }

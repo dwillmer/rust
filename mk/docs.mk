@@ -9,8 +9,7 @@
 # except according to those terms.
 
 ######################################################################
-# The various pieces of standalone documentation: guides, tutorial,
-# manual etc.
+# The various pieces of standalone documentation.
 #
 # The DOCS variable is their names (with no file extension).
 #
@@ -26,16 +25,20 @@
 # L10N_LANGS are the languages for which the docs have been
 # translated.
 ######################################################################
-DOCS := index intro tutorial guide guide-ffi guide-macros guide-lifetimes \
-	guide-tasks guide-container guide-pointers guide-testing \
-	guide-runtime complement-bugreport \
-	complement-lang-faq complement-design-faq complement-project-faq rust \
-    rustdoc guide-unsafe guide-strings
+DOCS := index intro tutorial \
+    complement-lang-faq complement-design-faq complement-project-faq \
+    rustdoc reference grammar
 
-PDF_DOCS := tutorial rust
+# Legacy guides, preserved for a while to reduce the number of 404s
+DOCS += guide-crates guide-error-handling guide-ffi guide-macros guide \
+    guide-ownership guide-plugins guide-pointers guide-strings guide-tasks \
+    guide-testing
 
-RUSTDOC_DEPS_rust := doc/full-toc.inc
-RUSTDOC_FLAGS_rust := --html-in-header=doc/full-toc.inc
+
+PDF_DOCS := reference
+
+RUSTDOC_DEPS_reference := doc/full-toc.inc
+RUSTDOC_FLAGS_reference := --html-in-header=doc/full-toc.inc
 
 L10N_LANGS := ja
 
@@ -50,8 +53,10 @@ RUSTDOC_HTML_OPTS_NO_CSS = --html-before-content=doc/version_info.html \
 RUSTDOC_HTML_OPTS = $(RUSTDOC_HTML_OPTS_NO_CSS) --markdown-css rust.css
 
 PANDOC_BASE_OPTS := --standalone --toc --number-sections
-PANDOC_TEX_OPTS = $(PANDOC_BASE_OPTS) --include-before-body=doc/version.tex \
-	--from=markdown --include-before-body=doc/footer.tex --to=latex
+PANDOC_TEX_OPTS = $(PANDOC_BASE_OPTS) --from=markdown --to=latex \
+	--include-before-body=doc/version.tex \
+	--include-before-body=doc/footer.tex \
+	--include-in-header=doc/uptack.tex
 PANDOC_EPUB_OPTS = $(PANDOC_BASE_OPTS) --to=epub
 
 # The rustdoc executable...
@@ -60,9 +65,19 @@ RUSTDOC_EXE = $(HBIN2_H_$(CFG_BUILD))/rustdoc$(X_$(CFG_BUILD))
 # ./configure
 RUSTDOC = $(RPATH_VAR2_T_$(CFG_BUILD)_H_$(CFG_BUILD)) $(RUSTDOC_EXE)
 
+# The rustbook executable...
+RUSTBOOK_EXE = $(HBIN2_H_$(CFG_BUILD))/rustbook$(X_$(CFG_BUILD))
+# ...with rpath included in case --disable-rpath was provided to
+# ./configure
+RUSTBOOK = $(RPATH_VAR2_T_$(CFG_BUILD)_H_$(CFG_BUILD)) $(RUSTBOOK_EXE)
+
+# The error-index-generator executable...
+ERR_IDX_GEN_EXE = $(HBIN2_H_$(CFG_BUILD))/error-index-generator$(X_$(CFG_BUILD))
+ERR_IDX_GEN = $(RPATH_VAR2_T_$(CFG_BUILD)_H_$(CFG_BUILD)) $(ERR_IDX_GEN_EXE)
+
 D := $(S)src/doc
 
-DOC_TARGETS :=
+DOC_TARGETS := trpl style error-index
 COMPILER_DOC_TARGETS :=
 DOC_L10N_TARGETS :=
 
@@ -74,25 +89,15 @@ else
 HTML_DEPS :=
 endif
 
-# Check for the various external utilities for the EPUB/PDF docs:
+# Check for xelatex
 
-ifeq ($(CFG_PDFLATEX),)
-  $(info cfg: no pdflatex found, deferring to xelatex)
-  ifeq ($(CFG_XELATEX),)
-    $(info cfg: no xelatex found, deferring to lualatex)
-    ifeq ($(CFG_LUALATEX),)
-      $(info cfg: no lualatex found, disabling LaTeX docs)
-      NO_PDF_DOCS = 1
-	else
-      CFG_LATEX := $(CFG_LUALATEX)
-    endif
-  else
+ifneq ($(CFG_XELATEX),)
     CFG_LATEX := $(CFG_XELATEX)
-  endif
-else
-  CFG_LATEX := $(CFG_PDFLATEX)
+    XELATEX = 1
+  else
+    $(info cfg: no xelatex found, disabling LaTeX docs)
+    NO_PDF_DOCS = 1
 endif
-
 
 ifeq ($(CFG_PANDOC),)
 $(info cfg: no pandoc found, omitting PDF and EPUB docs)
@@ -112,8 +117,8 @@ HTML_DEPS += doc/version_info.html
 doc/version_info.html: $(D)/version_info.html.template $(MKFILE_DEPS) \
                        $(wildcard $(D)/*.*) | doc/
 	@$(call E, version-info: $@)
-	$(Q)sed -e "s/VERSION/$(CFG_RELEASE)/; s/SHORT_HASH/$( \
-                    CFG_SHORT_VER_HASH)/; \
+	$(Q)sed -e "s/VERSION/$(CFG_RELEASE)/; \
+                s/SHORT_HASH/$(CFG_SHORT_VER_HASH)/; \
                 s/STAMP/$(CFG_VER_HASH)/;" $< >$@
 
 GENERATED += doc/version.tex doc/version_info.html
@@ -128,21 +133,21 @@ doc/:
 HTML_DEPS += doc/rust.css
 doc/rust.css: $(D)/rust.css | doc/
 	@$(call E, cp: $@)
-	$(Q)cp -a $< $@ 2> /dev/null
+	$(Q)cp -PRp $< $@ 2> /dev/null
 
 HTML_DEPS += doc/favicon.inc
 doc/favicon.inc: $(D)/favicon.inc | doc/
 	@$(call E, cp: $@)
-	$(Q)cp -a $< $@ 2> /dev/null
+	$(Q)cp -PRp $< $@ 2> /dev/null
 
 doc/full-toc.inc: $(D)/full-toc.inc | doc/
 	@$(call E, cp: $@)
-	$(Q)cp -a $< $@ 2> /dev/null
+	$(Q)cp -PRp $< $@ 2> /dev/null
 
 HTML_DEPS += doc/footer.inc
 doc/footer.inc: $(D)/footer.inc | doc/
 	@$(call E, cp: $@)
-	$(Q)cp -a $< $@ 2> /dev/null
+	$(Q)cp -PRp $< $@ 2> /dev/null
 
 # The (english) documentation for each doc item.
 
@@ -155,11 +160,15 @@ doc/footer.tex: $(D)/footer.inc | doc/
 	@$(call E, pandoc: $@)
 	$(CFG_PANDOC) --from=html --to=latex $< --output=$@
 
+doc/uptack.tex: $(D)/uptack.tex | doc/
+	$(Q)cp $< $@
+
 # HTML (rustdoc)
 DOC_TARGETS += doc/not_found.html
 doc/not_found.html: $(D)/not_found.md $(HTML_DEPS) | doc/
 	@$(call E, rustdoc: $@)
 	$(Q)$(RUSTDOC) $(RUSTDOC_HTML_OPTS_NO_CSS) \
+		--markdown-no-toc \
 		--markdown-css http://doc.rust-lang.org/rust.css $<
 
 define DEF_DOC
@@ -180,19 +189,32 @@ doc/$(1).epub: $$(D)/$(1).md | doc/
 
 # PDF (md =(pandoc)=> tex =(pdflatex)=> pdf)
 DOC_TARGETS += doc/$(1).tex
-doc/$(1).tex: $$(D)/$(1).md doc/footer.tex doc/version.tex | doc/
+doc/$(1).tex: $$(D)/$(1).md doc/uptack.tex doc/footer.tex doc/version.tex | doc/
 	@$$(call E, pandoc: $$@)
 	$$(CFG_PANDOC) $$(PANDOC_TEX_OPTS) $$< --output=$$@
 
 ifneq ($(NO_PDF_DOCS),1)
 ifeq ($$(SHOULD_BUILD_PDF_DOC_$(1)),1)
 DOC_TARGETS += doc/$(1).pdf
+ifneq ($(XELATEX),1)
 doc/$(1).pdf: doc/$(1).tex
 	@$$(call E, latex compiler: $$@)
 	$$(Q)$$(CFG_LATEX) \
 	-interaction=batchmode \
 	-output-directory=doc \
 	$$<
+else
+# The version of xelatex on the snap bots seemingly ingores -output-directory
+# So we'll output to . and move to the doc directory manually.
+# This will leave some intermediate files in the build directory.
+doc/$(1).pdf: doc/$(1).tex
+	@$$(call E, latex compiler: $$@)
+	$$(Q)$$(CFG_LATEX) \
+	-interaction=batchmode \
+	-output-directory=. \
+	$$<
+	$$(Q)mv ./$(1).pdf $$@
+endif # XELATEX
 endif # SHOULD_BUILD_PDF_DOCS_$(1)
 endif # NO_PDF_DOCS
 
@@ -201,56 +223,6 @@ endif # ONLY_HTML_DOCS
 endef
 
 $(foreach docname,$(DOCS),$(eval $(call DEF_DOC,$(docname))))
-
-
-# Localized documentation
-
-# FIXME: I (huonw) haven't actually been able to test properly, since
-# e.g. (by default) I'm doing an out-of-tree build (#12763), but even
-# adjusting for that, the files are too old(?) and are rejected by
-# po4a.
-#
-# As such, I've attempted to get it working as much as possible (and
-# switching from pandoc to rustdoc), but preserving the old behaviour
-# (e.g. only running on the tutorial)
-.PHONY: l10n-mds
-l10n-mds: $(D)/po4a.conf \
-		$(foreach lang,$(L10N_LANG),$(D)/po/$(lang)/*.md.po)
-	$(warning WARNING: localized documentation is experimental)
-	po4a --copyright-holder="The Rust Project Developers" \
-		--package-name="Rust" \
-		--package-version="$(CFG_RELEASE)" \
-		-M UTF-8 -L UTF-8 \
-		$(D)/po4a.conf
-
-define DEF_L10N_DOC
-DOC_L10N_TARGETS += doc/l10n/$(1)/$(2).html
-doc/l10n/$(1)/$(2).html: l10n-mds $$(HTML_DEPS) $$(RUSTDOC_DEPS_$(2))
-	@$$(call E, rustdoc: $$@)
-	$$(RUSTDOC) $$(RUSTDOC_HTML_OPTS) $$(RUSTDOC_FLAGS_$(1)) doc/l10n/$(1)/$(2).md
-endef
-
-$(foreach lang,$(L10N_LANGS),$(eval $(call DEF_L10N_DOC,$(lang),tutorial)))
-
-
-######################################################################
-# LLnextgen (grammar analysis from refman)
-######################################################################
-
-ifeq ($(CFG_LLNEXTGEN),)
-  $(info cfg: no llnextgen found, omitting grammar-verification)
-else
-.PHONY: verify-grammar
-
-doc/rust.g: $(D)/rust.md $(S)src/etc/extract_grammar.py
-	@$(call E, extract_grammar: $@)
-	$(Q)$(CFG_PYTHON) $(S)src/etc/extract_grammar.py $< >$@
-
-verify-grammar: doc/rust.g
-	@$(call E, LLnextgen: $<)
-	$(Q)$(CFG_LLNEXTGEN) --generate-lexer-wrapper=no $< >$@
-	$(Q)rm -f doc/rust.c doc/rust.h
-endif
 
 
 ######################################################################
@@ -273,7 +245,8 @@ LIB_DOC_DEP_$(1) = \
 	$$(RSINPUTS_$(1)) \
 	$$(RUSTDOC_EXE) \
 	$$(foreach dep,$$(RUST_DEPS_$(1)), \
-		$$(TLIB2_T_$(CFG_BUILD)_H_$(CFG_BUILD))/stamp.$$(dep) \
+		$$(TLIB2_T_$(CFG_BUILD)_H_$(CFG_BUILD))/stamp.$$(dep)) \
+	$$(foreach dep,$$(filter $$(DOC_CRATES), $$(RUST_DEPS_$(1))), \
 		doc/$$(dep)/)
 else
 LIB_DOC_DEP_$(1) = $$(CRATEFILE_$(1)) $$(RSINPUTS_$(1))
@@ -282,15 +255,21 @@ endif
 doc/$(1)/:
 	$$(Q)mkdir -p $$@
 
-$(2) += doc/$(1)/index.html
 doc/$(1)/index.html: CFG_COMPILER_HOST_TRIPLE = $(CFG_TARGET)
 doc/$(1)/index.html: $$(LIB_DOC_DEP_$(1)) doc/$(1)/
 	@$$(call E, rustdoc: $$@)
-	$$(Q)$$(RUSTDOC) --cfg dox --cfg stage2 $$<
+	$$(Q)CFG_LLVM_LINKAGE_FILE=$$(LLVM_LINKAGE_PATH_$(CFG_BUILD)) \
+		$$(RUSTDOC) --cfg dox --cfg stage2 $$(RUSTFLAGS_$(1)) $$<
 endef
 
-$(foreach crate,$(DOC_CRATES),$(eval $(call DEF_LIB_DOC,$(crate),DOC_TARGETS)))
-$(foreach crate,$(COMPILER_DOC_CRATES),$(eval $(call DEF_LIB_DOC,$(crate),COMPILER_DOC_TARGETS)))
+$(foreach crate,$(CRATES),$(eval $(call DEF_LIB_DOC,$(crate))))
+
+COMPILER_DOC_TARGETS := $(CRATES:%=doc/%/index.html)
+ifdef CFG_ENABLE_COMPILER_DOCS
+  DOC_TARGETS += $(COMPILER_DOC_TARGETS)
+else
+  DOC_TARGETS += $(DOC_CRATES:%=doc/%/index.html)
+endif
 
 ifdef CFG_DISABLE_DOCS
   $(info cfg: disabling doc build (CFG_DISABLE_DOCS))
@@ -301,6 +280,22 @@ endif
 docs: $(DOC_TARGETS)
 compiler-docs: $(COMPILER_DOC_TARGETS)
 
-docs-l10n: $(DOC_L10N_TARGETS)
+trpl: doc/book/index.html
 
-.PHONY: docs-l10n
+doc/book/index.html: $(RUSTBOOK_EXE) $(wildcard $(S)/src/doc/trpl/*.md) | doc/
+	@$(call E, rustbook: $@)
+	$(Q)rm -rf doc/book
+	$(Q)$(RUSTBOOK) build $(S)src/doc/trpl doc/book
+
+style: doc/style/index.html
+
+doc/style/index.html: $(RUSTBOOK_EXE) $(wildcard $(S)/src/doc/style/*.md) | doc/
+	@$(call E, rustbook: $@)
+	$(Q)rm -rf doc/style
+	$(Q)$(RUSTBOOK) build $(S)src/doc/style doc/style
+
+error-index: doc/error-index.html
+
+doc/error-index.html: $(ERR_IDX_GEN_EXE) | doc/
+	$(Q)$(call E, error-index-generator: $@)
+	$(Q)$(ERR_IDX_GEN)

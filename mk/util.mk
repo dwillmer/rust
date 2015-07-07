@@ -16,5 +16,8 @@ else
   E = echo $(1)
 endif
 
-S := $(CFG_SRC_DIR)
+print-%:
+	@echo $*=$($*)
 
+S := $(CFG_SRC_DIR)
+SREL := $(CFG_SRC_DIR_RELATIVE)

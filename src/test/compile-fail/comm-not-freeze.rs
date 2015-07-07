@@ -8,10 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::sync::mpsc::Sender;
+
 fn test<T: Sync>() {}
 
 fn main() {
-    test::<Sender<int>>();        //~ ERROR: does not fulfill `Sync`
-    test::<Receiver<int>>();        //~ ERROR: does not fulfill `Sync`
-    test::<Sender<int>>();  //~ ERROR: does not fulfill `Sync`
+    test::<Sender<isize>>();     //~ ERROR: `core::marker::Sync` is not implemented
 }

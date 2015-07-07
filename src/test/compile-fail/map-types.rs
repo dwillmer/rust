@@ -8,16 +8,25 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
+
 extern crate collections;
 
 use std::collections::HashMap;
 
+trait Map<K, V>
+{
+    fn get(&self, k: K) -> V { panic!() }
+}
+
+impl<K, V> Map<K, V> for HashMap<K, V> {}
+
 // Test that trait types printed in error msgs include the type arguments.
 
 fn main() {
-    let x: Box<HashMap<int, int>> = box HashMap::new();
-    let x: Box<Map<int, int>> = x;
-    let y: Box<Map<uint, int>> = box x;
-    //~^ ERROR failed to find an implementation of trait collections::Map<uint,int>
-    //~^^ ERROR failed to find an implementation of trait core::collections::Collection
+    let x: Box<HashMap<isize, isize>> = box HashMap::new();
+    let x: Box<Map<isize, isize>> = x;
+    // FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
+    let y: Box<Map<usize, isize>> = Box::new(x);
+    //~^ ERROR the trait `Map<usize, isize>` is not implemented
 }

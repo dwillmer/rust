@@ -8,16 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
-use std::gc::GC;
-
-fn foo(x: &uint) -> uint {
+fn foo(x: &usize) -> usize {
     *x
 }
 
 pub fn main() {
-    let p = box(GC) 22u;
+    let p: Box<_> = box 22;
     let r = foo(&*p);
     println!("r={}", r);
-    assert_eq!(r, 22u);
+    assert_eq!(r, 22);
 }

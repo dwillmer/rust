@@ -8,6 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
 struct DroppableStruct;
 enum DroppableEnum {
     DroppableVariant1, DroppableVariant2
@@ -26,7 +30,7 @@ impl Drop for DroppableEnum {
     }
 }
 
-trait MyTrait { }
+trait MyTrait { fn dummy(&self) { } }
 impl MyTrait for Box<DroppableStruct> {}
 impl MyTrait for Box<DroppableEnum> {}
 
@@ -39,13 +43,13 @@ impl  Whatever {
 
 fn main() {
     {
-        let f = box DroppableStruct;
+        let f: Box<_> = box DroppableStruct;
         let _a = Whatever::new(box f as Box<MyTrait>);
     }
     assert!(unsafe { DROPPED });
     unsafe { DROPPED = false; }
     {
-        let f = box DroppableVariant1;
+        let f: Box<_> = box DroppableEnum::DroppableVariant1;
         let _a = Whatever::new(box f as Box<MyTrait>);
     }
     assert!(unsafe { DROPPED });

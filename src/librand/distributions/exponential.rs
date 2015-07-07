@@ -29,6 +29,7 @@ use distributions::{ziggurat, ziggurat_tables, Sample, IndependentSample};
 /// Generate Normal Random
 /// Samples*](http://www.doornik.com/research/ziggurat.pdf). Nuffield
 /// College, Oxford
+#[derive(Copy, Clone)]
 pub struct Exp1(pub f64);
 
 // This could be done via `-rng.gen::<f64>().ln()` but that is slower.
@@ -55,17 +56,7 @@ impl Rand for Exp1 {
 ///
 /// This distribution has density function: `f(x) = lambda *
 /// exp(-lambda * x)` for `x > 0`.
-///
-/// # Example
-///
-/// ```rust
-/// use std::rand;
-/// use std::rand::distributions::{Exp, IndependentSample};
-///
-/// let exp = Exp::new(2.0);
-/// let v = exp.ind_sample(&mut rand::task_rng());
-/// println!("{} is from a Exp(2) distribution", v);
-/// ```
+#[derive(Copy, Clone)]
 pub struct Exp {
     /// `lambda` stored as `1/lambda`, since this is what we scale by.
     lambda_inverse: f64
@@ -73,7 +64,7 @@ pub struct Exp {
 
 impl Exp {
     /// Construct a new `Exp` with the given shape parameter
-    /// `lambda`. Fails if `lambda <= 0`.
+    /// `lambda`. Panics if `lambda <= 0`.
     pub fn new(lambda: f64) -> Exp {
         assert!(lambda > 0.0, "Exp::new called with `lambda` <= 0");
         Exp { lambda_inverse: 1.0 / lambda }
@@ -91,8 +82,8 @@ impl IndependentSample<f64> for Exp {
 }
 
 #[cfg(test)]
-mod test {
-    use std::prelude::*;
+mod tests {
+    use std::prelude::v1::*;
 
     use distributions::{Sample, IndependentSample};
     use super::Exp;
@@ -101,18 +92,18 @@ mod test {
     fn test_exp() {
         let mut exp = Exp::new(10.0);
         let mut rng = ::test::rng();
-        for _ in range(0u, 1000) {
+        for _ in 0..1000 {
             assert!(exp.sample(&mut rng) >= 0.0);
             assert!(exp.ind_sample(&mut rng) >= 0.0);
         }
     }
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_exp_invalid_lambda_zero() {
         Exp::new(0.0);
     }
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_exp_invalid_lambda_neg() {
         Exp::new(-10.0);
     }
@@ -122,7 +113,7 @@ mod test {
 mod bench {
     extern crate test;
 
-    use std::prelude::*;
+    use std::prelude::v1::*;
 
     use self::test::Bencher;
     use std::mem::size_of;
@@ -135,7 +126,7 @@ mod bench {
         let mut exp = Exp::new(2.71828 * 3.14159);
 
         b.iter(|| {
-            for _ in range(0, ::RAND_BENCH_N) {
+            for _ in 0..::RAND_BENCH_N {
                 exp.sample(&mut rng);
             }
         });

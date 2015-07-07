@@ -8,17 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
 
 // STACK BY REF
-// gdb-command:finish
 // gdb-command:print *self
 // gdb-check:$1 = {x = 987}
 // gdb-command:print arg1
@@ -28,7 +26,6 @@
 // gdb-command:continue
 
 // STACK BY VAL
-// gdb-command:finish
 // gdb-command:print self
 // gdb-check:$4 = {x = 987}
 // gdb-command:print arg1
@@ -38,7 +35,6 @@
 // gdb-command:continue
 
 // OWNED BY REF
-// gdb-command:finish
 // gdb-command:print *self
 // gdb-check:$7 = {x = 879}
 // gdb-command:print arg1
@@ -48,7 +44,6 @@
 // gdb-command:continue
 
 // OWNED BY VAL
-// gdb-command:finish
 // gdb-command:print self
 // gdb-check:$10 = {x = 879}
 // gdb-command:print arg1
@@ -58,7 +53,6 @@
 // gdb-command:continue
 
 // OWNED MOVED
-// gdb-command:finish
 // gdb-command:print *self
 // gdb-check:$13 = {x = 879}
 // gdb-command:print arg1
@@ -117,24 +111,27 @@
 // lldb-check:[...]$14 = -10.5
 // lldb-command:continue
 
+#![feature(box_syntax)]
+#![omit_gdb_pretty_printer_section]
 
+#[derive(Copy, Clone)]
 struct Struct {
-    x: int
+    x: isize
 }
 
-trait Trait {
+trait Trait : Sized {
 
-    fn self_by_ref<T>(&self, arg1: int, arg2: T) -> int {
+    fn self_by_ref<T>(&self, arg1: isize, arg2: T) -> isize {
         zzz(); // #break
         arg1
     }
 
-    fn self_by_val<T>(self, arg1: int, arg2: T) -> int {
+    fn self_by_val<T>(self, arg1: isize, arg2: T) -> isize {
         zzz(); // #break
         arg1
     }
 
-    fn self_owned<T>(self: Box<Self>, arg1: int, arg2: T) -> int {
+    fn self_owned<T>(self: Box<Self>, arg1: isize, arg2: T) -> isize {
         zzz(); // #break
         arg1
     }
@@ -147,7 +144,7 @@ fn main() {
     let _ = stack.self_by_ref(-1, 2_u16);
     let _ = stack.self_by_val(-3, -4_i16);
 
-    let owned = box Struct { x: 879 };
+    let owned: Box<_> = box Struct { x: 879 };
     let _ = owned.self_by_ref(-5, -6_i32);
     let _ = owned.self_by_val(-7, -8_i64);
     let _ = owned.self_owned(-9, -10.5_f32);

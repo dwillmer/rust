@@ -8,27 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
-// This test case checks if function arguments already have the correct value when breaking at the
-// first line of the function, that is if the function prologue has already been executed at the
-// first line. Note that because of the __morestack part of the prologue GDB incorrectly breaks at
-// before the arguments have been properly loaded when setting the breakpoint via the function name.
-// Therefore the setup here sets them using line numbers (so be careful when changing this file).
+// This test case checks if function arguments already have the correct value
+// when breaking at the first line of the function, that is if the function
+// prologue has already been executed at the first line. Note that because of
+// the __morestack part of the prologue GDB incorrectly breaks at before the
+// arguments have been properly loaded when setting the breakpoint via the
+// function name.
 
 // compile-flags:-g
-// gdb-command:set print pretty off
-// gdb-command:break function-arg-initialization.rs:243
-// gdb-command:break function-arg-initialization.rs:258
-// gdb-command:break function-arg-initialization.rs:262
-// gdb-command:break function-arg-initialization.rs:266
-// gdb-command:break function-arg-initialization.rs:270
-// gdb-command:break function-arg-initialization.rs:274
-// gdb-command:break function-arg-initialization.rs:278
-// gdb-command:break function-arg-initialization.rs:282
-// gdb-command:break function-arg-initialization.rs:286
-// gdb-command:break function-arg-initialization.rs:294
-// gdb-command:break function-arg-initialization.rs:301
 
 // === GDB TESTS ===================================================================================
 
@@ -234,13 +223,11 @@
 // lldb-command:continue
 
 
+#![allow(unused_variables)]
+#![omit_gdb_pretty_printer_section]
 
-#![allow(unused_variable)]
-
-
-
-fn immediate_args(a: int, b: bool, c: f64) {
-    () // #break
+fn immediate_args(a: isize, b: bool, c: f64) {
+    println!("") // #break
 }
 
 struct BigStruct {
@@ -255,19 +242,21 @@ struct BigStruct {
 }
 
 fn non_immediate_args(a: BigStruct, b: BigStruct) {
-    () // #break
+    println!("") // #break
 }
 
 fn binding(a: i64, b: u64, c: f64) {
-    let x = 0i; // #break
+    let x = 0; // #break
+    println!("")
 }
 
 fn assignment(mut a: u64, b: u64, c: f64) {
     a = b; // #break
+    println!("")
 }
 
 fn function_call(x: u64, y: u64, z: f64) {
-    std::io::stdio::print("Hi!") // #break
+    println!("Hi!") // #break
 }
 
 fn identifier(x: u64, y: u64, z: f64) -> u64 {
@@ -343,6 +332,3 @@ fn main() {
     while_expr(40, 41, 42);
     loop_expr(43, 44, 45);
 }
-
-
-

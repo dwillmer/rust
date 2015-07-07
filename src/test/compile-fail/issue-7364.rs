@@ -8,12 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
+#![feature(const_fn)]
 
 use std::cell::RefCell;
-use std::gc::{Gc, GC};
 
-// Regresion test for issue 7364
-static managed: Gc<RefCell<int>> = box(GC) RefCell::new(0);
-//~^ ERROR static items are not allowed to have custom pointers
+// Regression test for issue 7364
+static boxed: Box<RefCell<isize>> = box RefCell::new(0);
+//~^ ERROR allocations are not allowed in statics
+//~| ERROR the trait `core::marker::Sync` is not implemented for the type
+//~| ERROR the trait `core::marker::Sync` is not implemented for the type
 
 fn main() { }

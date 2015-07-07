@@ -10,20 +10,24 @@
 
 //! This module is used to store stuff from Rust's AST in a more convenient
 //! manner (and with prettier names) before cleaning.
+pub use self::StructType::*;
+pub use self::TypeBound::*;
 
 use syntax;
 use syntax::codemap::Span;
+use syntax::abi;
 use syntax::ast;
 use syntax::attr;
 use syntax::ast::{Ident, NodeId};
-
-use std::gc::Gc;
+use syntax::ptr::P;
 
 pub struct Module {
     pub name: Option<Ident>,
     pub attrs: Vec<ast::Attribute>,
     pub where_outer: Span,
     pub where_inner: Span,
+    pub extern_crates: Vec<ExternCrate>,
+    pub imports: Vec<Import>,
     pub structs: Vec<Struct>,
     pub enums: Vec<Enum>,
     pub fns: Vec<Function>,
@@ -31,12 +35,13 @@ pub struct Module {
     pub id: NodeId,
     pub typedefs: Vec<Typedef>,
     pub statics: Vec<Static>,
+    pub constants: Vec<Constant>,
     pub traits: Vec<Trait>,
     pub vis: ast::Visibility,
     pub stab: Option<attr::Stability>,
     pub impls: Vec<Impl>,
+    pub def_traits: Vec<DefaultImpl>,
     pub foreigns: Vec<ast::ForeignMod>,
-    pub view_items: Vec<ast::ViewItem>,
     pub macros: Vec<Macro>,
     pub is_crate: bool,
 }
@@ -51,15 +56,18 @@ impl Module {
             where_outer: syntax::codemap::DUMMY_SP,
             where_inner: syntax::codemap::DUMMY_SP,
             attrs      : Vec::new(),
+            extern_crates: Vec::new(),
+            imports    : Vec::new(),
             structs    : Vec::new(),
             enums      : Vec::new(),
             fns        : Vec::new(),
             mods       : Vec::new(),
             typedefs   : Vec::new(),
             statics    : Vec::new(),
+            constants  : Vec::new(),
             traits     : Vec::new(),
             impls      : Vec::new(),
-            view_items : Vec::new(),
+            def_traits : Vec::new(),
             foreigns   : Vec::new(),
             macros     : Vec::new(),
             is_crate   : false,
@@ -67,7 +75,7 @@ impl Module {
     }
 }
 
-#[deriving(Show, Clone, Encodable, Decodable)]
+#[derive(Debug, Clone, RustcEncodable, RustcDecodable, Copy)]
 pub enum StructType {
     /// A normal struct
     Plain,
@@ -124,13 +132,15 @@ pub struct Function {
     pub name: Ident,
     pub vis: ast::Visibility,
     pub stab: Option<attr::Stability>,
-    pub fn_style: ast::FnStyle,
+    pub unsafety: ast::Unsafety,
+    pub constness: ast::Constness,
     pub whence: Span,
     pub generics: ast::Generics,
+    pub abi: abi::Abi,
 }
 
 pub struct Typedef {
-    pub ty: ast::P<ast::Ty>,
+    pub ty: P<ast::Ty>,
     pub gen: ast::Generics,
     pub name: Ident,
     pub id: ast::NodeId,
@@ -140,10 +150,22 @@ pub struct Typedef {
     pub stab: Option<attr::Stability>,
 }
 
+#[derive(Debug)]
 pub struct Static {
-    pub type_: ast::P<ast::Ty>,
+    pub type_: P<ast::Ty>,
     pub mutability: ast::Mutability,
-    pub expr: Gc<ast::Expr>,
+    pub expr: P<ast::Expr>,
+    pub name: Ident,
+    pub attrs: Vec<ast::Attribute>,
+    pub vis: ast::Visibility,
+    pub stab: Option<attr::Stability>,
+    pub id: ast::NodeId,
+    pub whence: Span,
+}
+
+pub struct Constant {
+    pub type_: P<ast::Ty>,
+    pub expr: P<ast::Expr>,
     pub name: Ident,
     pub attrs: Vec<ast::Attribute>,
     pub vis: ast::Visibility,
@@ -153,8 +175,9 @@ pub struct Static {
 }
 
 pub struct Trait {
+    pub unsafety: ast::Unsafety,
     pub name: Ident,
-    pub items: Vec<ast::TraitItem>, //should be TraitItem
+    pub items: Vec<P<ast::TraitItem>>, //should be TraitItem
     pub generics: ast::Generics,
     pub bounds: Vec<ast::TyParamBound>,
     pub attrs: Vec<ast::Attribute>,
@@ -165,15 +188,25 @@ pub struct Trait {
 }
 
 pub struct Impl {
+    pub unsafety: ast::Unsafety,
+    pub polarity: ast::ImplPolarity,
     pub generics: ast::Generics,
     pub trait_: Option<ast::TraitRef>,
-    pub for_: ast::P<ast::Ty>,
-    pub items: Vec<ast::ImplItem>,
+    pub for_: P<ast::Ty>,
+    pub items: Vec<P<ast::ImplItem>>,
     pub attrs: Vec<ast::Attribute>,
     pub whence: Span,
     pub vis: ast::Visibility,
     pub stab: Option<attr::Stability>,
     pub id: ast::NodeId,
+}
+
+pub struct DefaultImpl {
+    pub unsafety: ast::Unsafety,
+    pub trait_: ast::TraitRef,
+    pub id: ast::NodeId,
+    pub attrs: Vec<ast::Attribute>,
+    pub whence: Span,
 }
 
 pub struct Macro {
@@ -182,6 +215,23 @@ pub struct Macro {
     pub attrs: Vec<ast::Attribute>,
     pub whence: Span,
     pub stab: Option<attr::Stability>,
+    pub imported_from: Option<Ident>,
+}
+
+pub struct ExternCrate {
+    pub name: Ident,
+    pub path: Option<String>,
+    pub vis: ast::Visibility,
+    pub attrs: Vec<ast::Attribute>,
+    pub whence: Span,
+}
+
+pub struct Import {
+    pub id: NodeId,
+    pub vis: ast::Visibility,
+    pub attrs: Vec<ast::Attribute>,
+    pub node: ast::ViewPath_,
+    pub whence: Span,
 }
 
 pub fn struct_type_from_def(sd: &ast::StructDef) -> StructType {

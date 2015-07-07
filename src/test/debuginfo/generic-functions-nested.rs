@@ -8,37 +8,32 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$1 = -1
 // gdb-command:print y
 // gdb-check:$2 = 1
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$3 = -1
 // gdb-command:print y
 // gdb-check:$4 = 2.5
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$5 = -2.5
 // gdb-command:print y
 // gdb-check:$6 = 1
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$7 = -2.5
 // gdb-command:print y
@@ -74,8 +69,11 @@
 // lldb-check:[...]$7 = 2.5
 // lldb-command:continue
 
+
+#![omit_gdb_pretty_printer_section]
+
 fn outer<TA: Clone>(a: TA) {
-    inner(a.clone(), 1i);
+    inner(a.clone(), 1);
     inner(a.clone(), 2.5f64);
 
     fn inner<TX, TY>(x: TX, y: TY) {
@@ -84,7 +82,7 @@ fn outer<TA: Clone>(a: TA) {
 }
 
 fn main() {
-    outer(-1i);
+    outer(-1);
     outer(-2.5f64);
 }
 

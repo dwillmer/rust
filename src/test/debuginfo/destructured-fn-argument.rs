@@ -8,23 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
 
-// gdb-command:finish
 // gdb-command:print a
 // gdb-check:$1 = 1
 // gdb-command:print b
 // gdb-check:$2 = false
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print a
 // gdb-check:$3 = 2
 // gdb-command:print b
@@ -33,14 +30,12 @@
 // gdb-check:$5 = 4
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print a
 // gdb-check:$6 = 5
 // gdb-command:print b
-// gdb-check:$7 = {6, 7}
+// gdb-check:$7 = {__0 = 6, __1 = 7}
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print h
 // gdb-check:$8 = 8
 // gdb-command:print i
@@ -49,26 +44,22 @@
 // gdb-check:$10 = 11
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print k
 // gdb-check:$11 = 12
 // gdb-command:print l
 // gdb-check:$12 = 13
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print m
 // gdb-check:$13 = 14
 // gdb-command:print n
 // gdb-check:$14 = 16
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print o
 // gdb-check:$15 = 18
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print p
 // gdb-check:$16 = 19
 // gdb-command:print q
@@ -77,14 +68,12 @@
 // gdb-check:$18 = {a = 21, b = 22}
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print s
 // gdb-check:$19 = 24
 // gdb-command:print t
 // gdb-check:$20 = 23
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print u
 // gdb-check:$21 = 25
 // gdb-command:print v
@@ -105,68 +94,56 @@
 // gdb-check:$29 = 33
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print aa
-// gdb-check:$30 = {34, 35}
+// gdb-check:$30 = {__0 = 34, __1 = 35}
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print bb
-// gdb-check:$31 = {36, 37}
+// gdb-check:$31 = {__0 = 36, __1 = 37}
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print cc
 // gdb-check:$32 = 38
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print dd
-// gdb-check:$33 = {40, 41, 42}
+// gdb-check:$33 = {__0 = 40, __1 = 41, __2 = 42}
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print *ee
-// gdb-check:$34 = {43, 44, 45}
+// gdb-check:$34 = {__0 = 43, __1 = 44, __2 = 45}
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print *ff
 // gdb-check:$35 = 46
 // gdb-command:print gg
-// gdb-check:$36 = {47, 48}
+// gdb-check:$36 = {__0 = 47, __1 = 48}
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print *hh
 // gdb-check:$37 = 50
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print ii
 // gdb-check:$38 = 51
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print *jj
 // gdb-check:$39 = 52
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print kk
 // gdb-check:$40 = 53
 // gdb-command:print ll
 // gdb-check:$41 = 54
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print mm
 // gdb-check:$42 = 55
 // gdb-command:print *nn
 // gdb-check:$43 = 56
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print oo
 // gdb-check:$44 = 57
 // gdb-command:print pp
@@ -175,7 +152,6 @@
 // gdb-check:$46 = 59
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print rr
 // gdb-check:$47 = 60
 // gdb-command:print ss
@@ -186,6 +162,7 @@
 
 
 // === LLDB TESTS ==================================================================================
+
 // lldb-command:run
 
 // lldb-command:print a
@@ -332,8 +309,12 @@
 // lldb-check:[...]$48 = 62
 // lldb-command:continue
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
+#![feature(box_patterns)]
+#![feature(box_syntax)]
+#![omit_gdb_pretty_printer_section]
 
+use self::Univariant::Unit;
 
 struct Struct {
     a: i64,
@@ -344,18 +325,18 @@ enum Univariant {
     Unit(i32)
 }
 
-struct TupleStruct (f64, int);
+struct TupleStruct (f64, isize);
 
 
-fn simple_tuple((a, b): (int, bool)) {
+fn simple_tuple((a, b): (isize, bool)) {
     zzz(); // #break
 }
 
-fn nested_tuple((a, (b, c)): (int, (u16, u16))) {
+fn nested_tuple((a, (b, c)): (isize, (u16, u16))) {
     zzz(); // #break
 }
 
-fn destructure_only_first_level((a, b): (int, (u32, u32))) {
+fn destructure_only_first_level((a, b): (isize, (u32, u32))) {
     zzz(); // #break
 }
 
@@ -367,7 +348,7 @@ fn struct_pattern(Struct { a: k, b: l }: Struct) {
     zzz(); // #break
 }
 
-fn ignored_tuple_element((m, _, n): (int, u16, i32)) {
+fn ignored_tuple_element((m, _, n): (isize, u16, i32)) {
     zzz(); // #break
 }
 
@@ -389,27 +370,27 @@ fn complex_nesting(((u,   v  ), ((w,   (x,   Struct { a: y, b: z})), Struct { a:
     zzz(); // #break
 }
 
-fn managed_box(&aa: &(int, int)) {
+fn managed_box(&aa: &(isize, isize)) {
     zzz(); // #break
 }
 
-fn borrowed_pointer(&bb: &(int, int)) {
+fn borrowed_pointer(&bb: &(isize, isize)) {
     zzz(); // #break
 }
 
-fn contained_borrowed_pointer((&cc, _): (&int, int)) {
+fn contained_borrowed_pointer((&cc, _): (&isize, isize)) {
     zzz(); // #break
 }
 
-fn unique_pointer(box dd: Box<(int, int, int)>) {
+fn unique_pointer(box dd: Box<(isize, isize, isize)>) {
     zzz(); // #break
 }
 
-fn ref_binding(ref ee: (int, int, int)) {
+fn ref_binding(ref ee: (isize, isize, isize)) {
     zzz(); // #break
 }
 
-fn ref_binding_in_tuple((ref ff, gg): (int, (int, int))) {
+fn ref_binding_in_tuple((ref ff, gg): (isize, (isize, isize))) {
     zzz(); // #break
 }
 
@@ -433,7 +414,7 @@ fn tuple_struct_with_ref_binding(TupleStruct(mm, ref nn): TupleStruct) {
     zzz(); // #break
 }
 
-fn multiple_arguments((oo, pp): (int, int), qq : int) {
+fn multiple_arguments((oo, pp): (isize, isize), qq : isize) {
     zzz(); // #break
 }
 
@@ -461,7 +442,7 @@ fn main() {
     tuple_struct_with_ref_binding(TupleStruct(55.0, 56));
     multiple_arguments((57, 58), 59);
 
-    fn nested_function(rr: int, (ss, tt): (int, int)) {
+    fn nested_function(rr: isize, (ss, tt): (isize, isize)) {
         zzz(); // #break
     }
 

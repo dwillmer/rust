@@ -12,7 +12,7 @@
 // literal syntax.
 
 struct Foo {
-    x: int,
+    x: isize,
 
 }
 
@@ -24,5 +24,6 @@ impl Drop for Foo {
 
 fn main() {
     let a = Foo { x: 3 };
-    let _ = [ a, ..5 ];     //~ ERROR copying a value of non-copyable type
+    let _ = [ a; 5 ];
+    //~^ ERROR the trait `core::marker::Copy` is not implemented for the type `Foo`
 }

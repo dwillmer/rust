@@ -15,17 +15,17 @@
 //!
 //! This is the upstream crate.
 
-#![crate_id = "uta"]
+#![crate_name = "uta"]
 
 mod traits {
-    pub trait TraitA { fn val(&self) -> int { 2 } }
-    pub trait TraitB { fn val(&self) -> int { 3 } }
+    pub trait TraitA { fn val(&self) -> isize { 2 } }
+    pub trait TraitB { fn val(&self) -> isize { 3 } }
 }
 
 impl traits::TraitA for () {}
 impl traits::TraitB for () {}
 
-pub fn foo<T>(_: int) -> int {
+pub fn foo<T>(_: isize) -> isize {
     use traits::TraitA;
     let v = ();
     v.val()

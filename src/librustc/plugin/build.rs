@@ -21,19 +21,16 @@ struct RegistrarFinder {
     registrars: Vec<(ast::NodeId, Span)> ,
 }
 
-impl Visitor<()> for RegistrarFinder {
-    fn visit_item(&mut self, item: &ast::Item, _: ()) {
-        match item.node {
-            ast::ItemFn(..) => {
-                if attr::contains_name(item.attrs.as_slice(),
-                                       "plugin_registrar") {
-                    self.registrars.push((item.id, item.span));
-                }
+impl<'v> Visitor<'v> for RegistrarFinder {
+    fn visit_item(&mut self, item: &ast::Item) {
+        if let ast::ItemFn(..) = item.node {
+            if attr::contains_name(&item.attrs,
+                                   "plugin_registrar") {
+                self.registrars.push((item.id, item.span));
             }
-            _ => {}
         }
 
-        visit::walk_item(self, item, ());
+        visit::walk_item(self, item);
     }
 }
 
@@ -41,7 +38,7 @@ impl Visitor<()> for RegistrarFinder {
 pub fn find_plugin_registrar(diagnostic: &diagnostic::SpanHandler,
                              krate: &ast::Crate) -> Option<ast::NodeId> {
     let mut finder = RegistrarFinder { registrars: Vec::new() };
-    visit::walk_crate(&mut finder, krate, ());
+    visit::walk_crate(&mut finder, krate);
 
     match finder.registrars.len() {
         0 => None,
@@ -51,7 +48,7 @@ pub fn find_plugin_registrar(diagnostic: &diagnostic::SpanHandler,
         },
         _ => {
             diagnostic.handler().err("multiple plugin registration functions found");
-            for &(_, span) in finder.registrars.iter() {
+            for &(_, span) in &finder.registrars {
                 diagnostic.span_note(span, "one is here");
             }
             diagnostic.handler().abort_if_errors();

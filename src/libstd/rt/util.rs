@@ -8,23 +8,31 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use from_str::FromStr;
-use from_str::from_str;
-use libc::uintptr_t;
-use option::{Some, None, Option};
-use os;
-use str::Str;
-use sync::atomic;
+use io::prelude::*;
+
+use env;
+use fmt;
+use intrinsics;
+use sync::atomic::{self, Ordering};
+use sys::stdio::Stderr;
 
 /// Dynamically inquire about whether we're running under V.
 /// You should usually not use this unless your test definitely
 /// can't run correctly un-altered. Valgrind is there to help
 /// you notice weirdness in normal, un-doctored code paths!
 pub fn running_on_valgrind() -> bool {
-    extern {
-        fn rust_running_on_valgrind() -> uintptr_t;
+    return on_valgrind();
+    #[cfg(windows)]
+    fn on_valgrind() -> bool { false }
+
+    #[cfg(unix)]
+    fn on_valgrind() -> bool {
+        use libc::uintptr_t;
+        extern {
+            fn rust_running_on_valgrind() -> uintptr_t;
+        }
+        unsafe { rust_running_on_valgrind() != 0 }
     }
-    unsafe { rust_running_on_valgrind() != 0 }
 }
 
 /// Valgrind has a fixed-sized array (size around 2000) of segment descriptors
@@ -40,37 +48,38 @@ pub fn limit_thread_creation_due_to_osx_and_valgrind() -> bool {
     (cfg!(target_os="macos")) && running_on_valgrind()
 }
 
-pub fn min_stack() -> uint {
-    static mut MIN: atomic::AtomicUint = atomic::INIT_ATOMIC_UINT;
-    match unsafe { MIN.load(atomic::SeqCst) } {
+pub fn min_stack() -> usize {
+    static MIN: atomic::AtomicUsize = atomic::AtomicUsize::new(0);
+    match MIN.load(Ordering::SeqCst) {
         0 => {}
         n => return n - 1,
     }
-    let amt = os::getenv("RUST_MIN_STACK").and_then(|s| from_str(s.as_slice()));
+    let amt = env::var("RUST_MIN_STACK").ok().and_then(|s| s.parse().ok());
     let amt = amt.unwrap_or(2 * 1024 * 1024);
     // 0 is our sentinel value, so ensure that we'll never see 0 after
     // initialization has run
-    unsafe { MIN.store(amt + 1, atomic::SeqCst); }
+    MIN.store(amt + 1, Ordering::SeqCst);
     return amt;
 }
 
-/// Get's the number of scheduler threads requested by the environment
-/// either `RUST_THREADS` or `num_cpus`.
-pub fn default_sched_threads() -> uint {
-    match os::getenv("RUST_THREADS") {
-        Some(nstr) => {
-            let opt_n: Option<uint> = FromStr::from_str(nstr.as_slice());
-            match opt_n {
-                Some(n) if n > 0 => n,
-                _ => fail!("`RUST_THREADS` is `{}`, should be a positive integer", nstr)
-            }
-        }
-        None => {
-            if limit_thread_creation_due_to_osx_and_valgrind() {
-                1
-            } else {
-                os::num_cpus()
-            }
-        }
-    }
+// Indicates whether we should perform expensive sanity checks, including rtassert!
+//
+// FIXME: Once the runtime matures remove the `true` below to turn off rtassert,
+//        etc.
+pub const ENFORCE_SANITY: bool = true || !cfg!(rtopt) || cfg!(rtdebug) ||
+                                  cfg!(rtassert);
+
+pub fn dumb_print(args: fmt::Arguments) {
+    let _ = Stderr::new().map(|mut stderr| stderr.write_fmt(args));
+}
+
+pub fn abort(args: fmt::Arguments) -> ! {
+    rterrln!("fatal runtime error: {}", args);
+    unsafe { intrinsics::abort(); }
+}
+
+pub unsafe fn report_overflow() {
+    use thread;
+    rterrln!("\nthread '{}' has overflowed its stack",
+             thread::current().name().unwrap_or("<unknown>"));
 }

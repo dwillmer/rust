@@ -8,19 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(macro_rules)]
+#![feature(custom_attribute)]
 
-macro_rules! test ( ($nm:ident,
+macro_rules! test { ($nm:ident,
                      #[$a:meta],
-                     $i:item) => (mod $nm { #[$a] $i }); )
+                     $i:item) => (mod $nm { #[$a] $i }); }
 
 test!(a,
       #[cfg(qux)],
-      pub fn bar() { })
+      pub fn bar() { });
 
 test!(b,
       #[cfg(not(qux))],
-      pub fn bar() { })
+      pub fn bar() { });
 
 // test1!(#[bar])
 #[qux]
@@ -28,4 +28,3 @@ fn main() {
     a::bar(); //~ ERROR unresolved name `a::bar`
     b::bar();
 }
-

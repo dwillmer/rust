@@ -8,24 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_id="static_methods_crate#0.1"]
+#![crate_name="static_methods_crate"]
 #![crate_type = "lib"]
-
-use std::int;
 
 pub trait read {
     fn readMaybe(s: String) -> Option<Self>;
 }
 
-impl read for int {
-    fn readMaybe(s: String) -> Option<int> {
-        from_str::<int>(s.as_slice())
+impl read for isize {
+    fn readMaybe(s: String) -> Option<isize> {
+        s.parse().ok()
     }
 }
 
 impl read for bool {
     fn readMaybe(s: String) -> Option<bool> {
-        match s.as_slice() {
+        match &*s {
           "true" => Some(true),
           "false" => Some(false),
           _ => None
@@ -36,6 +34,6 @@ impl read for bool {
 pub fn read<T:read>(s: String) -> T {
     match read::readMaybe(s) {
       Some(x) => x,
-      _ => fail!("read failed!")
+      _ => panic!("read panicked!")
     }
 }

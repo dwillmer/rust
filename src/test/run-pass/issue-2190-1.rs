@@ -8,20 +8,25 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::task::TaskBuilder;
+// pretty-expanded FIXME #23616
 
-static generations: uint = 1024+256+128+49;
+#![feature(thunk)]
 
-fn spawn(f: proc():Send) {
-    TaskBuilder::new().stack_size(32 * 1024).spawn(f)
+use std::thread::Builder;
+use std::thunk::Thunk;
+
+static generations: usize = 1024+256+128+49;
+
+fn spawn(f: Thunk<'static>) {
+    Builder::new().stack_size(32 * 1024).spawn(move|| f());
 }
 
-fn child_no(x: uint) -> proc():Send {
-    proc() {
+fn child_no(x: usize) -> Thunk<'static> {
+    Box::new(move|| {
         if x < generations {
             spawn(child_no(x+1));
         }
-    }
+    })
 }
 
 pub fn main() {

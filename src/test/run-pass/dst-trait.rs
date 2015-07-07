@@ -8,30 +8,34 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-struct Fat<Sized? T> {
-    f1: int,
+
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
+struct Fat<T: ?Sized> {
+    f1: isize,
     f2: &'static str,
     ptr: T
 }
 
-#[deriving(PartialEq,Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 struct Bar;
 
-#[deriving(PartialEq,Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 struct Bar1 {
-    f: int
+    f: isize
 }
 
 trait ToBar {
     fn to_bar(&self) -> Bar;
-    fn to_val(&self) -> int;
+    fn to_val(&self) -> isize;
 }
 
 impl ToBar for Bar {
     fn to_bar(&self) -> Bar {
         *self
     }
-    fn to_val(&self) -> int {
+    fn to_val(&self) -> isize {
         0
     }
 }
@@ -39,39 +43,39 @@ impl ToBar for Bar1 {
     fn to_bar(&self) -> Bar {
         Bar
     }
-    fn to_val(&self) -> int {
+    fn to_val(&self) -> isize {
         self.f
     }
 }
 
 // x is a fat pointer
 fn foo(x: &Fat<ToBar>) {
-    assert!(x.f1 == 5);
-    assert!(x.f2 == "some str");
-    assert!(x.ptr.to_bar() == Bar);
-    assert!(x.ptr.to_val() == 42);
+    assert_eq!(x.f1, 5);
+    assert_eq!(x.f2, "some str");
+    assert_eq!(x.ptr.to_bar(), Bar);
+    assert_eq!(x.ptr.to_val(), 42);
 
     let y = &x.ptr;
-    assert!(y.to_bar() == Bar);
-    assert!(y.to_val() == 42);
+    assert_eq!(y.to_bar(), Bar);
+    assert_eq!(y.to_val(), 42);
 }
 
 fn bar(x: &ToBar) {
-    assert!(x.to_bar() == Bar);
-    assert!(x.to_val() == 42);
+    assert_eq!(x.to_bar(), Bar);
+    assert_eq!(x.to_val(), 42);
 }
 
 fn baz(x: &Fat<Fat<ToBar>>) {
-    assert!(x.f1 == 5);
-    assert!(x.f2 == "some str");
-    assert!(x.ptr.f1 == 8);
-    assert!(x.ptr.f2 == "deep str");
-    assert!(x.ptr.ptr.to_bar() == Bar);
-    assert!(x.ptr.ptr.to_val() == 42);
+    assert_eq!(x.f1, 5);
+    assert_eq!(x.f2, "some str");
+    assert_eq!(x.ptr.f1, 8);
+    assert_eq!(x.ptr.f2, "deep str");
+    assert_eq!(x.ptr.ptr.to_bar(), Bar);
+    assert_eq!(x.ptr.ptr.to_val(), 42);
 
     let y = &x.ptr.ptr;
-    assert!(y.to_bar() == Bar);
-    assert!(y.to_val() == 42);
+    assert_eq!(y.to_bar(), Bar);
+    assert_eq!(y.to_val(), 42);
 
 }
 
@@ -89,10 +93,12 @@ pub fn main() {
 
     // Zero size object.
     let f6: &Fat<ToBar> = &Fat { f1: 5, f2: "some str", ptr: Bar };
-    assert!(f6.ptr.to_bar() == Bar);
+    assert_eq!(f6.ptr.to_bar(), Bar);
 
     // &*
-    let f7: Box<ToBar> = box Bar1 {f :42};
+    //
+    // FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
+    let f7: Box<ToBar> = Box::new(Bar1 {f :42});
     bar(&*f7);
 
     // Deep nesting

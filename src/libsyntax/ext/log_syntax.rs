@@ -11,18 +11,22 @@
 use ast;
 use codemap;
 use ext::base;
+use feature_gate;
 use print;
-
-use std::rc::Rc;
 
 pub fn expand_syntax_ext<'cx>(cx: &'cx mut base::ExtCtxt,
                               sp: codemap::Span,
-                              tt: &[ast::TokenTree])
+                              tts: &[ast::TokenTree])
                               -> Box<base::MacResult+'cx> {
+    if !cx.ecfg.enable_log_syntax() {
+        feature_gate::emit_feature_err(&cx.parse_sess.span_diagnostic,
+                                       "log_syntax",
+                                       sp,
+                                       feature_gate::EXPLAIN_LOG_SYNTAX);
+        return base::DummyResult::any(sp);
+    }
 
-    cx.print_backtrace();
-    println!("{}", print::pprust::tt_to_string(&ast::TTDelim(
-                Rc::new(tt.iter().map(|x| (*x).clone()).collect()))));
+    println!("{}", print::pprust::tts_to_string(tts));
 
     // any so that `log_syntax` can be invoked as an expression and item.
     base::DummyResult::any(sp)

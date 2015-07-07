@@ -11,7 +11,7 @@
 use std::cell::RefCell;
 
 fn main() {
-    let m = RefCell::new(0i);
+    let m = RefCell::new(0);
     let p;
     {
         let b = m.borrow();

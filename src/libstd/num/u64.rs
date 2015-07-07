@@ -10,16 +10,9 @@
 
 //! Operations and constants for unsigned 64-bits integer (`u64` type)
 
-#![unstable]
+#![stable(feature = "rust1", since = "1.0.0")]
 #![doc(primitive = "u64")]
-
-use from_str::FromStr;
-use num::{ToStrRadix, FromStrRadix};
-use num::strconv;
-use option::Option;
-use slice::ImmutableSlice;
-use string::String;
 
 pub use core::u64::{BITS, BYTES, MIN, MAX};
 
-uint_module!(u64)
+uint_module! { u64 }

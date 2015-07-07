@@ -12,13 +12,18 @@
 
 fn main() {
     enum R { REB(()) }
-    struct Tau { t: uint }
+    struct Tau { t: usize }
     enum E { B(R, Tau) }
 
-    let e = B(REB(()), Tau { t: 3 });
+    let e = E::B(R::REB(()), Tau { t: 3 });
     let u = match e {
-        B(
-          Tau{t: x},    //~ ERROR mismatched types
+        E::B(
+          Tau{t: x},
+          //~^ ERROR mismatched types
+          //~| expected `main::R`
+          //~| found `main::Tau`
+          //~| expected enum `main::R`
+          //~| found struct `main::Tau`
           _) => x,
     };
 }

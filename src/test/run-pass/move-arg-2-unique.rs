@@ -9,7 +9,10 @@
 // except according to those terms.
 
 
-fn test(foo: Box<Vec<int>> ) { assert!((*foo.get(0) == 10)); }
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
+fn test(foo: Box<Vec<isize>> ) { assert_eq!((*foo)[0], 10); }
 
 pub fn main() {
     let x = box vec!(10);

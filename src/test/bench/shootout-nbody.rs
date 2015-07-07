@@ -1,19 +1,51 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
+// The Computer Language Benchmarks Game
+// http://benchmarksgame.alioth.debian.org/
 //
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
+// contributed by the Rust Project Developers
 
-static PI: f64 = 3.141592653589793;
-static SOLAR_MASS: f64 = 4.0 * PI * PI;
-static YEAR: f64 = 365.24;
-static N_BODIES: uint = 5;
+// Copyright (c) 2011-2014 The Rust Project Developers
+//
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions
+// are met:
+//
+// - Redistributions of source code must retain the above copyright
+//   notice, this list of conditions and the following disclaimer.
+//
+// - Redistributions in binary form must reproduce the above copyright
+//   notice, this list of conditions and the following disclaimer in
+//   the documentation and/or other materials provided with the
+//   distribution.
+//
+// - Neither the name of "The Computer Language Benchmarks Game" nor
+//   the name of "The Computer Language Shootout Benchmarks" nor the
+//   names of its contributors may be used to endorse or promote
+//   products derived from this software without specific prior
+//   written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+// FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+// COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+// INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+// (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+// STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 
-static BODIES: [Planet, ..N_BODIES] = [
+use std::mem;
+
+const PI: f64 = 3.141592653589793;
+const SOLAR_MASS: f64 = 4.0 * PI * PI;
+const YEAR: f64 = 365.24;
+const N_BODIES: usize = 5;
+
+static BODIES: [Planet;N_BODIES] = [
     // Sun
     Planet {
         x: 0.0, y: 0.0, z: 0.0,
@@ -62,21 +94,22 @@ static BODIES: [Planet, ..N_BODIES] = [
     },
 ];
 
+#[derive(Copy, Clone)]
 struct Planet {
     x: f64, y: f64, z: f64,
     vx: f64, vy: f64, vz: f64,
     mass: f64,
 }
 
-fn advance(bodies: &mut [Planet, ..N_BODIES], dt: f64, steps: int) {
-    for _ in range(0, steps) {
-        let mut b_slice = bodies.as_mut_slice();
+fn advance(bodies: &mut [Planet;N_BODIES], dt: f64, steps: isize) {
+    for _ in 0..steps {
+        let mut b_slice: &mut [_] = bodies;
         loop {
-            let bi = match b_slice.mut_shift_ref() {
+            let bi = match shift_mut_ref(&mut b_slice) {
                 Some(bi) => bi,
                 None => break
             };
-            for bj in b_slice.mut_iter() {
+            for bj in &mut *b_slice {
                 let dx = bi.x - bj.x;
                 let dy = bi.y - bj.y;
                 let dz = bi.z - bj.z;
@@ -101,16 +134,16 @@ fn advance(bodies: &mut [Planet, ..N_BODIES], dt: f64, steps: int) {
     }
 }
 
-fn energy(bodies: &[Planet, ..N_BODIES]) -> f64 {
+fn energy(bodies: &[Planet;N_BODIES]) -> f64 {
     let mut e = 0.0;
-    let mut bodies = bodies.as_slice();
+    let mut bodies = bodies.iter();
     loop {
-        let bi = match bodies.shift_ref() {
+        let bi = match bodies.next() {
             Some(bi) => bi,
             None => break
         };
         e += (bi.vx * bi.vx + bi.vy * bi.vy + bi.vz * bi.vz) * bi.mass / 2.0;
-        for bj in bodies.iter() {
+        for bj in bodies.clone() {
             let dx = bi.x - bj.x;
             let dy = bi.y - bj.y;
             let dz = bi.z - bj.z;
@@ -121,7 +154,7 @@ fn energy(bodies: &[Planet, ..N_BODIES]) -> f64 {
     e
 }
 
-fn offset_momentum(bodies: &mut [Planet, ..N_BODIES]) {
+fn offset_momentum(bodies: &mut [Planet;N_BODIES]) {
     let mut px = 0.0;
     let mut py = 0.0;
     let mut pz = 0.0;
@@ -137,19 +170,30 @@ fn offset_momentum(bodies: &mut [Planet, ..N_BODIES]) {
 }
 
 fn main() {
-    let n = if std::os::getenv("RUST_BENCH").is_some() {
+    let n = if std::env::var_os("RUST_BENCH").is_some() {
         5000000
     } else {
-        std::os::args().as_slice().get(1)
-            .and_then(|arg| from_str(arg.as_slice()))
+        std::env::args().nth(1)
+            .and_then(|arg| arg.parse().ok())
             .unwrap_or(1000)
     };
     let mut bodies = BODIES;
 
     offset_momentum(&mut bodies);
-    println!("{:.9f}", energy(&bodies));
+    println!("{:.9}", energy(&bodies));
 
     advance(&mut bodies, 0.01, n);
 
-    println!("{:.9f}", energy(&bodies));
+    println!("{:.9}", energy(&bodies));
+}
+
+/// Pop a mutable reference off the head of a slice, mutating the slice to no
+/// longer contain the mutable reference. This is a safe operation because the
+/// two mutable borrows are entirely disjoint.
+fn shift_mut_ref<'a, T>(r: &mut &'a mut [T]) -> Option<&'a mut T> {
+    let res = mem::replace(r, &mut []);
+    if res.is_empty() { return None }
+    let (a, b) = res.split_at_mut(1);
+    *r = b;
+    Some(&mut a[0])
 }

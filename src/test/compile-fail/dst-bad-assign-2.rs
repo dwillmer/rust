@@ -10,30 +10,30 @@
 
 // Forbid assignment into a dynamically sized type.
 
-struct Fat<Sized? T> {
-    f1: int,
+struct Fat<T: ?Sized> {
+    f1: isize,
     f2: &'static str,
     ptr: T
 }
 
-#[deriving(PartialEq,Eq)]
+#[derive(PartialEq,Eq)]
 struct Bar;
 
-#[deriving(PartialEq,Eq)]
+#[derive(PartialEq,Eq)]
 struct Bar1 {
-    f: int
+    f: isize
 }
 
 trait ToBar {
     fn to_bar(&self) -> Bar;
-    fn to_val(&self) -> int;
+    fn to_val(&self) -> isize;
 }
 
 impl ToBar for Bar1 {
     fn to_bar(&self) -> Bar {
         Bar
     }
-    fn to_val(&self) -> int {
+    fn to_val(&self) -> isize {
         self.f
     }
 }
@@ -41,6 +41,8 @@ impl ToBar for Bar1 {
 pub fn main() {
     // Assignment.
     let f5: &mut Fat<ToBar> = &mut Fat { f1: 5, f2: "some str", ptr: Bar1 {f :42} };
-    let z: Box<ToBar> = box Bar1 {f: 36};
-    f5.ptr = *z;  //~ ERROR dynamically sized type on lhs of assignment
+    // FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
+    let z: Box<ToBar> = Box::new(Bar1 {f: 36});
+    f5.ptr = *z;
+    //~^ ERROR the trait `core::marker::Sized` is not implemented
 }

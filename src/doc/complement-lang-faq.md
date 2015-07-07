@@ -5,47 +5,43 @@
 There aren't many large programs yet. The Rust [compiler][rustc], 60,000+ lines at the time of writing, is written in Rust. As the oldest body of Rust code it has gone through many iterations of the language, and some parts are nicer to look at than others. It may not be the best code to learn from, but [borrowck] and [resolve] were written recently.
 
 [rustc]: https://github.com/rust-lang/rust/tree/master/src/librustc
-[resolve]: https://github.com/rust-lang/rust/blob/master/src/librustc/middle/resolve.rs
-[borrowck]: https://github.com/rust-lang/rust/blob/master/src/librustc/middle/borrowck/
+[resolve]: https://github.com/rust-lang/rust/tree/master/src/librustc_resolve
+[borrowck]: https://github.com/rust-lang/rust/tree/master/src/librustc_borrowck/borrowck
 
 A research browser engine called [Servo][servo], currently 30,000+ lines across more than a dozen crates, will be exercising a lot of Rust's distinctive type-system and concurrency features, and integrating many native libraries.
 
-[servo]: https://github.com/mozilla/servo
+[servo]: https://github.com/servo/servo
 
 Some examples that demonstrate different aspects of the language:
 
 * [sprocketnes], an NES emulator with no GC, using modern Rust conventions
 * The language's general-purpose [hash] function, SipHash-2-4. Bit twiddling, OO, macros
 * The standard library's [HashMap], a sendable hash map in an OO style
-* The extra library's [json] module. Enums and pattern matching
+* The standard library's [json] module. Enums and pattern matching
 
 [sprocketnes]: https://github.com/pcwalton/sprocketnes
-[hash]: https://github.com/rust-lang/rust/blob/master/src/libstd/hash/mod.rs
-[HashMap]: https://github.com/rust-lang/rust/blob/master/src/libcollections/hashmap.rs
+[hash]: https://github.com/rust-lang/rust/tree/master/src/libcore/hash
+[HashMap]: https://github.com/rust-lang/rust/tree/master/src/libstd/collections/hash
 [json]: https://github.com/rust-lang/rust/blob/master/src/libserialize/json.rs
 
-You may also be interested in browsing [GitHub's Rust][github-rust] page.
+You may also be interested in browsing [trending Rust repositories][github-rust] on GitHub.
 
 [github-rust]: https://github.com/trending?l=rust
 
 ## Is anyone using Rust in production?
 
-Currently, Rust is still pre-1.0, and so we don't recommend that you use Rust
-in production unless you know exactly what you're getting into.
-
-That said, there are two production deployments of Rust that we're aware of:
+Yes. For example (incomplete):
 
 * [OpenDNS](http://labs.opendns.com/2013/10/04/zeromq-helping-us-block-malicious-domains/)
 * [Skylight](http://skylight.io)
-
-Let the fact that this is an easily countable number be a warning.
+* [wit.ai](https://github.com/wit-ai/witd)
+* [Codius](https://codius.org/blog/codius-rust/)
+* [MaidSafe](http://maidsafe.net/)
+* [Terminal.com](https://terminal.com)
 
 ## Does it run on Windows?
 
-Yes. All development happens in lock-step on all 3 target platforms. Using MinGW, not Cygwin. Note that the windows implementation currently has some limitations: in particular 64-bit build is [not fully supported yet][win64], and all executables created by rustc [depend on libgcc DLL at runtime][libgcc].
-
-[win64]: https://github.com/rust-lang/rust/issues/1237
-[libgcc]: https://github.com/rust-lang/rust/issues/11782
+Yes. All development happens in lockstep on all 3 target platforms (using MinGW, not Cygwin).
 
 ## Is it OO? How do I do this thing I normally do in an OO language?
 
@@ -65,14 +61,15 @@ Data values in the language can only be constructed through a fixed set of initi
 * There is no global inter-crate namespace; all name management occurs within a crate.
  * Using another crate binds the root of _its_ namespace into the user's namespace.
 
-## Why is failure unwinding non-recoverable within a task? Why not try to "catch exceptions"?
+## Why is panic unwinding non-recoverable within a thread? Why not try to "catch exceptions"?
 
-In short, because too few guarantees could be made about the dynamic environment of the catch block, as well as invariants holding in the unwound heap, to be able to safely resume; we believe that other methods of signalling and logging errors are more appropriate, with tasks playing the role of a "hard" isolation boundary between separate heaps.
+In short, because too few guarantees could be made about the dynamic environment of the catch block, as well as invariants holding in the unwound heap, to be able to safely resume; we believe that other methods of signalling and logging errors are more appropriate, with threads playing the role of a "hard" isolation boundary between separate heaps.
 
 Rust provides, instead, three predictable and well-defined options for handling any combination of the three main categories of "catch" logic:
 
 * Failure _logging_ is done by the integrated logging subsystem.
-* _Recovery_ after a failure is done by trapping a task failure from _outside_ the task, where other tasks are known to be unaffected.
+* _Recovery_ after a panic is done by trapping a thread panic from _outside_
+  the thread, where other threads are known to be unaffected.
 * _Cleanup_ of resources is done by RAII-style objects with destructors.
 
 Cleanup through RAII-style destructors is more likely to work than in catch blocks anyways, since it will be better tested (part of the non-error control paths, so executed all the time).
@@ -93,8 +90,8 @@ We don't know if there's an obvious, easy, efficient, stock-textbook way of supp
 
 There's a lot of debate on this topic; it's easy to find a proponent of default-sync or default-async communication, and there are good reasons for either. Our choice rests on the following arguments:
 
-* Part of the point of isolating tasks is to decouple tasks from one another, such that assumptions in one task do not cause undue constraints (or bugs, if violated!) in another. Temporal coupling is as real as any other kind; async-by-default relaxes the default case to only _causal_ coupling.
-* Default-async supports buffering and batching communication, reducing the frequency and severity of task-switching and inter-task / inter-domain synchronization.
+* Part of the point of isolating threads is to decouple threads from one another, such that assumptions in one thread do not cause undue constraints (or bugs, if violated!) in another. Temporal coupling is as real as any other kind; async-by-default relaxes the default case to only _causal_ coupling.
+* Default-async supports buffering and batching communication, reducing the frequency and severity of thread-switching and inter-thread / inter-domain synchronization.
 * Default-async with transmittable channels is the lowest-level building block on which more-complex synchronization topologies and strategies can be built; it is not clear to us that the majority of cases fit the 2-party full-synchronization pattern rather than some more complex multi-party or multi-stage scenario. We did not want to force all programs to pay for wiring the former assumption into all communications.
 
 ## Why are channels half-duplex (one-way)?
@@ -103,15 +100,15 @@ Similar to the reasoning about default-sync: it wires fewer assumptions into the
 
 ## Why are strings UTF-8 by default? Why not UCS2 or UCS4?
 
-The `str` type is UTF-8 because we observe more text in the wild in this encoding -- particularly in network transmissions, which are endian-agnostic -- and we think it's best that the default treatment of I/O not involve having to recode codepoints in each direction.
+The `str` type is UTF-8 because we observe more text in the wild in this encoding – particularly in network transmissions, which are endian-agnostic – and we think it's best that the default treatment of I/O not involve having to recode codepoints in each direction.
 
 This does mean that indexed access to a Unicode codepoint inside a `str` value is an O(n) operation. On the one hand, this is clearly undesirable; on the other hand, this problem is full of trade-offs and we'd like to point a few important qualifications:
 
-* Scanning a `str` for ASCII-range codepoints can still be done safely octet-at-a-time, with each indexing operation pulling out a `u8` costing only O(1) and producing a value that can be cast and compared to an ASCII-range `char`. So if you're (say) line-breaking on `'\n'`, octet-based treatment still works. UTF8 was well-designed this way.
+* Scanning a `str` for ASCII-range codepoints can still be done safely octet-at-a-time. If you use `.as_bytes()`, pulling out a `u8` costs only O(1) and produces a value that can be cast and compared to an ASCII-range `char`. So if you're (say) line-breaking on `'\n'`, octet-based treatment still works. UTF8 was well-designed this way.
 * Most "character oriented" operations on text only work under very restricted language assumptions sets such as "ASCII-range codepoints only". Outside ASCII-range, you tend to have to use a complex (non-constant-time) algorithm for determining linguistic-unit (glyph, word, paragraph) boundaries anyways. We recommend using an "honest" linguistically-aware, Unicode-approved algorithm.
 * The `char` type is UCS4. If you honestly need to do a codepoint-at-a-time algorithm, it's trivial to write a `type wstr = [char]`, and unpack a `str` into it in a single pass, then work with the `wstr`. In other words: the fact that the language is not "decoding to UCS4 by default" shouldn't stop you from decoding (or re-encoding any other way) if you need to work with that encoding.
 
-## Why are strings, vectors etc. built-in types rather than (say) special kinds of trait/impl?
+## Why are `str`s, slices, arrays etc. built-in types rather than (say) special kinds of trait/impl?
 
 In each case there is one or more operator, literal constructor, overloaded use or integration with a built-in control structure that makes us think it would be awkward to phrase the type in terms of more-general type constructors. Same as, say, with numbers! But this is partly an aesthetic call, and we'd be willing to look at a worked-out proposal for eliminating or rephrasing these special cases.
 
@@ -123,7 +120,7 @@ Yes. Calling C code from Rust is simple and exactly as efficient as calling C co
 
 Yes. The Rust code has to be exposed via an `extern` declaration, which makes it C-ABI compatible. Such a function can be passed to C code as a function pointer or, if given the `#[no_mangle]` attribute to disable symbol mangling, can be called directly from C code.
 
-## Why aren't function signatures inferred? Why only local slots?
+## Why aren't function signatures inferred? Why only local variables?
 
 * Mechanically, it simplifies the inference algorithm; inference only requires looking at one function at a time.
 * The same simplification goes double for human readers. A reader does not need an IDE running an inference algorithm across an entire crate to be able to guess at a function's argument types; it's always explicit and nearby.
@@ -144,7 +141,7 @@ For simplicity, we do not plan to do so. Implementing automatic semicolon insert
 
 ## How do I get my program to display the output of logging macros?
 
-**Short answer** set the RUST_LOG environment variable to the name of your source file, sans extension.
+**Short Answer**: Set the `RUST_LOG` environment variable to the name of your source file, sans extension.
 
 ```sh
 rustc hello.rs
@@ -152,15 +149,19 @@ export RUST_LOG=hello
 ./hello
 ```
 
-**Long answer** RUST_LOG takes a 'logging spec' that consists of a
+**Long Answer**: `RUST_LOG` takes a 'logging spec' that consists of a
 comma-separated list of paths, where a path consists of the crate name and
-sequence of module names, each separated by double-colons. For standalone .rs
-files the crate is implicitly named after the source file, so in the above
-example we were setting RUST_LOG to the name of the hello crate. Multiple paths
+sequence of module names, each separated by double-colons. For standalone `.rs`
+files, the crate is implicitly named after the source file, so in the above
+example we were setting `RUST_LOG` to the name of the hello crate. Multiple paths
 can be combined to control the exact logging you want to see. For example, when
-debugging linking in the compiler you might set
-`RUST_LOG=rustc::metadata::creader,rustc::util::filesearch,rustc::back::rpath`
-For a full description see [the logging crate][1].
+debugging linking in the compiler, you might set the following:
+
+```sh
+RUST_LOG=rustc::metadata::creader,rustc::util::filesearch,rustc::back::rpath
+```
+
+For a full description, see [the logging crate][1].
 
 ## How fast is Rust?
 
@@ -171,6 +172,6 @@ performance.
 That said, it is an explicit goal of Rust to be as fast as C++ for most things.
 Language decisions are made with performance in mind, and we want Rust to be as
 fast as possible. Given that Rust is built on top of LLVM, any performance
-improvements in it also help us be faster.
+improvements in it also help Rust become faster.
 
 [1]:log/index.html

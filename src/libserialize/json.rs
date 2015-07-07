@@ -12,228 +12,242 @@
 // Copyright (c) 2011 Google Inc.
 
 #![forbid(non_camel_case_types)]
-#![allow(missing_doc)]
+#![allow(missing_docs)]
 
-/*!
-JSON parsing and serialization
+//! JSON parsing and serialization
+//!
+//! # What is JSON?
+//!
+//! JSON (JavaScript Object Notation) is a way to write data in Javascript.
+//! Like XML, it allows to encode structured data in a text format that can be easily read by humans
+//! Its simple syntax and native compatibility with JavaScript have made it a widely used format.
+//!
+//! Data types that can be encoded are JavaScript types (see the `Json` enum for more details):
+//!
+//! * `Boolean`: equivalent to rust's `bool`
+//! * `Number`: equivalent to rust's `f64`
+//! * `String`: equivalent to rust's `String`
+//! * `Array`: equivalent to rust's `Vec<T>`, but also allowing objects of different types in the
+//!   same array
+//! * `Object`: equivalent to rust's `BTreeMap<String, json::Json>`
+//! * `Null`
+//!
+//! An object is a series of string keys mapping to values, in `"key": value` format.
+//! Arrays are enclosed in square brackets ([ ... ]) and objects in curly brackets ({ ... }).
+//! A simple JSON document encoding a person, their age, address and phone numbers could look like
+//!
+//! ```ignore
+//! {
+//!     "FirstName": "John",
+//!     "LastName": "Doe",
+//!     "Age": 43,
+//!     "Address": {
+//!         "Street": "Downing Street 10",
+//!         "City": "London",
+//!         "Country": "Great Britain"
+//!     },
+//!     "PhoneNumbers": [
+//!         "+44 1234567",
+//!         "+44 2345678"
+//!     ]
+//! }
+//! ```
+//!
+//! # Rust Type-based Encoding and Decoding
+//!
+//! Rust provides a mechanism for low boilerplate encoding & decoding of values to and from JSON via
+//! the serialization API.
+//! To be able to encode a piece of data, it must implement the `serialize::RustcEncodable` trait.
+//! To be able to decode a piece of data, it must implement the `serialize::RustcDecodable` trait.
+//! The Rust compiler provides an annotation to automatically generate the code for these traits:
+//! `#[derive(RustcDecodable, RustcEncodable)]`
+//!
+//! The JSON API provides an enum `json::Json` and a trait `ToJson` to encode objects.
+//! The `ToJson` trait provides a `to_json` method to convert an object into a `json::Json` value.
+//! A `json::Json` value can be encoded as a string or buffer using the functions described above.
+//! You can also use the `json::Encoder` object, which implements the `Encoder` trait.
+//!
+//! When using `ToJson` the `RustcEncodable` trait implementation is not mandatory.
+//!
+//! # Examples of use
+//!
+//! ## Using Autoserialization
+//!
+//! Create a struct called `TestStruct` and serialize and deserialize it to and from JSON using the
+//! serialization API, using the derived serialization code.
+//!
+//! ```notrust
+//! // FIXME(#19470): this cannot be ```rust``` because it fails orphan checking at the moment
+//! extern crate serialize;
+//! use serialize::json;
+//!
+//! // Automatically generate `Decodable` and `Encodable` trait implementations
+//! #[derive(RustcDecodable, RustcEncodable)]
+//! pub struct TestStruct  {
+//!     data_int: u8,
+//!     data_str: String,
+//!     data_vector: Vec<u8>,
+//! }
+//!
+//! fn main() {
+//!     let object = TestStruct {
+//!         data_int: 1,
+//!         data_str: "homura".to_string(),
+//!         data_vector: vec![2,3,4,5],
+//!     };
+//!
+//!     // Serialize using `json::encode`
+//!     let encoded = json::encode(&object).unwrap();
+//!
+//!     // Deserialize using `json::decode`
+//!     let decoded: TestStruct = json::decode(&encoded[..]).unwrap();
+//! }
+//! ```
+//!
+//! ## Using the `ToJson` trait
+//!
+//! The examples above use the `ToJson` trait to generate the JSON string, which is required
+//! for custom mappings.
+//!
+//! ### Simple example of `ToJson` usage
+//!
+//! ```notrust
+//! // FIXME(#19470): this cannot be ```rust``` because it fails orphan checking at the moment
+//! extern crate serialize;
+//! use serialize::json::{self, ToJson, Json};
+//!
+//! // A custom data structure
+//! struct ComplexNum {
+//!     a: f64,
+//!     b: f64,
+//! }
+//!
+//! // JSON value representation
+//! impl ToJson for ComplexNum {
+//!     fn to_json(&self) -> Json {
+//!         Json::String(format!("{}+{}i", self.a, self.b))
+//!     }
+//! }
+//!
+//! // Only generate `RustcEncodable` trait implementation
+//! #[derive(Encodable)]
+//! pub struct ComplexNumRecord {
+//!     uid: u8,
+//!     dsc: String,
+//!     val: Json,
+//! }
+//!
+//! fn main() {
+//!     let num = ComplexNum { a: 0.0001, b: 12.539 };
+//!     let data: String = json::encode(&ComplexNumRecord{
+//!         uid: 1,
+//!         dsc: "test".to_string(),
+//!         val: num.to_json(),
+//!     }).unwrap();
+//!     println!("data: {}", data);
+//!     // data: {"uid":1,"dsc":"test","val":"0.0001+12.539i"};
+//! }
+//! ```
+//!
+//! ### Verbose example of `ToJson` usage
+//!
+//! ```notrust
+//! // FIXME(#19470): this cannot be ```rust``` because it fails orphan checking at the moment
+//! extern crate serialize;
+//! use std::collections::BTreeMap;
+//! use serialize::json::{self, Json, ToJson};
+//!
+//! // Only generate `Decodable` trait implementation
+//! #[derive(Decodable)]
+//! pub struct TestStruct {
+//!     data_int: u8,
+//!     data_str: String,
+//!     data_vector: Vec<u8>,
+//! }
+//!
+//! // Specify encoding method manually
+//! impl ToJson for TestStruct {
+//!     fn to_json(&self) -> Json {
+//!         let mut d = BTreeMap::new();
+//!         // All standard types implement `to_json()`, so use it
+//!         d.insert("data_int".to_string(), self.data_int.to_json());
+//!         d.insert("data_str".to_string(), self.data_str.to_json());
+//!         d.insert("data_vector".to_string(), self.data_vector.to_json());
+//!         Json::Object(d)
+//!     }
+//! }
+//!
+//! fn main() {
+//!     // Serialize using `ToJson`
+//!     let input_data = TestStruct {
+//!         data_int: 1,
+//!         data_str: "madoka".to_string(),
+//!         data_vector: vec![2,3,4,5],
+//!     };
+//!     let json_obj: Json = input_data.to_json();
+//!     let json_str: String = json_obj.to_string();
+//!
+//!     // Deserialize like before
+//!     let decoded: TestStruct = json::decode(json_str)).unwrap();
+//! }
+//! ```
 
-# What is JSON?
+use self::JsonEvent::*;
+use self::ErrorCode::*;
+use self::ParserError::*;
+use self::DecoderError::*;
+use self::ParserState::*;
+use self::InternalStackElement::*;
 
-JSON (JavaScript Object Notation) is a way to write data in Javascript.
-Like XML, it allows to encode structured data in a text format that can be easily read by humans.
-Its simple syntax and native compatibility with JavaScript have made it a widely used format.
-
-Data types that can be encoded are JavaScript types (see the `Json` enum for more details):
-
-* `Boolean`: equivalent to rust's `bool`
-* `Number`: equivalent to rust's `f64`
-* `String`: equivalent to rust's `String`
-* `Array`: equivalent to rust's `Vec<T>`, but also allowing objects of different types in the same
-array
-* `Object`: equivalent to rust's `Treemap<String, json::Json>`
-* `Null`
-
-An object is a series of string keys mapping to values, in `"key": value` format.
-Arrays are enclosed in square brackets ([ ... ]) and objects in curly brackets ({ ... }).
-A simple JSON document encoding a person, his/her age, address and phone numbers could look like:
-
-```ignore
-{
-    "FirstName": "John",
-    "LastName": "Doe",
-    "Age": 43,
-    "Address": {
-        "Street": "Downing Street 10",
-        "City": "London",
-        "Country": "Great Britain"
-    },
-    "PhoneNumbers": [
-        "+44 1234567",
-        "+44 2345678"
-    ]
-}
-```
-
-# Rust Type-based Encoding and Decoding
-
-Rust provides a mechanism for low boilerplate encoding & decoding of values to and from JSON via
-the serialization API.
-To be able to encode a piece of data, it must implement the `serialize::Encodable` trait.
-To be able to decode a piece of data, it must implement the `serialize::Decodable` trait.
-The Rust compiler provides an annotation to automatically generate the code for these traits:
-`#[deriving(Decodable, Encodable)]`
-
-The JSON API provides an enum `json::Json` and a trait `ToJson` to encode objects.
-The `ToJson` trait provides a `to_json` method to convert an object into a `json::Json` value.
-A `json::Json` value can be encoded as a string or buffer using the functions described above.
-You can also use the `json::Encoder` object, which implements the `Encoder` trait.
-
-When using `ToJson` the `Encodable` trait implementation is not mandatory.
-
-# Examples of use
-
-## Using Autoserialization
-
-Create a struct called `TestStruct` and serialize and deserialize it to and from JSON using the
-serialization API, using the derived serialization code.
-
-```rust
-extern crate serialize;
-use serialize::json;
-
-// Automatically generate `Decodable` and `Encodable` trait implementations
-#[deriving(Decodable, Encodable)]
-pub struct TestStruct  {
-    data_int: u8,
-    data_str: String,
-    data_vector: Vec<u8>,
-}
-
-fn main() {
-    let object = TestStruct {
-        data_int: 1,
-        data_str: "toto".to_string(),
-        data_vector: vec![2,3,4,5],
-    };
-
-    // Serialize using `json::encode`
-    let encoded = json::encode(&object);
-
-    // Deserialize using `json::decode`
-    let decoded: TestStruct = json::decode(encoded.as_slice()).unwrap();
-}
-```
-
-## Using the `ToJson` trait
-
-The examples above use the `ToJson` trait to generate the JSON string, which is required
-for custom mappings.
-
-### Simple example of `ToJson` usage
-
-```rust
-extern crate serialize;
-use serialize::json::ToJson;
-use serialize::json;
-
-// A custom data structure
-struct ComplexNum {
-    a: f64,
-    b: f64,
-}
-
-// JSON value representation
-impl ToJson for ComplexNum {
-    fn to_json(&self) -> json::Json {
-        json::String(format!("{}+{}i", self.a, self.b))
-    }
-}
-
-// Only generate `Encodable` trait implementation
-#[deriving(Encodable)]
-pub struct ComplexNumRecord {
-    uid: u8,
-    dsc: String,
-    val: json::Json,
-}
-
-fn main() {
-    let num = ComplexNum { a: 0.0001, b: 12.539 };
-    let data: String = json::encode(&ComplexNumRecord{
-        uid: 1,
-        dsc: "test".to_string(),
-        val: num.to_json(),
-    });
-    println!("data: {}", data);
-    // data: {"uid":1,"dsc":"test","val":"0.0001+12.539j"};
-}
-```
-
-### Verbose example of `ToJson` usage
-
-```rust
-extern crate serialize;
-use std::collections::TreeMap;
-use serialize::json::ToJson;
-use serialize::json;
-
-// Only generate `Decodable` trait implementation
-#[deriving(Decodable)]
-pub struct TestStruct {
-    data_int: u8,
-    data_str: String,
-    data_vector: Vec<u8>,
-}
-
-// Specify encoding method manually
-impl ToJson for TestStruct {
-    fn to_json(&self) -> json::Json {
-        let mut d = TreeMap::new();
-        // All standard types implement `to_json()`, so use it
-        d.insert("data_int".to_string(), self.data_int.to_json());
-        d.insert("data_str".to_string(), self.data_str.to_json());
-        d.insert("data_vector".to_string(), self.data_vector.to_json());
-        json::Object(d)
-    }
-}
-
-fn main() {
-    // Serialize using `ToJson`
-    let input_data = TestStruct {
-        data_int: 1,
-        data_str: "toto".to_string(),
-        data_vector: vec![2,3,4,5],
-    };
-    let json_obj: json::Json = input_data.to_json();
-    let json_str: String = json_obj.to_string();
-
-    // Deserialize like before
-    let decoded: TestStruct = json::decode(json_str.as_slice()).unwrap();
-}
-```
-
-*/
-
+use std::collections::{HashMap, BTreeMap};
+use std::io::prelude::*;
+use std::io;
+use std::mem::swap;
+use std::num::FpCategory as Fp;
+use std::ops::Index;
+use std::str::FromStr;
+use std::string;
+use std::{char, f64, fmt, str};
 use std;
-use std::collections::{HashMap, TreeMap};
-use std::{char, f64, fmt, io, num, str};
-use std::io::MemWriter;
-use std::mem::{swap, transmute};
-use std::num::{FPNaN, FPInfinite};
-use std::str::ScalarValue;
-use std::string::String;
-use std::vec::Vec;
+use rustc_unicode::str as unicode_str;
+use rustc_unicode::str::Utf16Item;
 
 use Encodable;
 
 /// Represents a json value
-#[deriving(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub enum Json {
     I64(i64),
     U64(u64),
     F64(f64),
-    String(String),
+    String(string::String),
     Boolean(bool),
-    List(List),
-    Object(Object),
+    Array(self::Array),
+    Object(self::Object),
     Null,
 }
 
-pub type List = Vec<Json>;
-pub type Object = TreeMap<String, Json>;
+pub type Array = Vec<Json>;
+pub type Object = BTreeMap<string::String, Json>;
+
+pub struct PrettyJson<'a> { inner: &'a Json }
+
+pub struct AsJson<'a, T: 'a> { inner: &'a T }
+pub struct AsPrettyJson<'a, T: 'a> { inner: &'a T, indent: Option<usize> }
 
 /// The errors that can arise while parsing a JSON stream.
-#[deriving(Clone, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ErrorCode {
     InvalidSyntax,
     InvalidNumber,
     EOFWhileParsingObject,
-    EOFWhileParsingList,
+    EOFWhileParsingArray,
     EOFWhileParsingValue,
     EOFWhileParsingString,
     KeyMustBeAString,
     ExpectedColon,
     TrailingCharacters,
+    TrailingComma,
     InvalidEscape,
     InvalidUnicodeCodePoint,
     LoneLeadingSurrogateInHexEscape,
@@ -243,40 +257,47 @@ pub enum ErrorCode {
     NotUtf8,
 }
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum ParserError {
     /// msg, line, col
-    SyntaxError(ErrorCode, uint, uint),
-    IoError(io::IoErrorKind, &'static str),
+    SyntaxError(ErrorCode, usize, usize),
+    IoError(io::ErrorKind, String),
 }
 
 // Builder and Parser have the same errors.
 pub type BuilderError = ParserError;
 
-#[deriving(Clone, PartialEq, Show)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum DecoderError {
     ParseError(ParserError),
-    ExpectedError(String, String),
-    MissingFieldError(String),
-    UnknownVariantError(String),
-    ApplicationError(String)
+    ExpectedError(string::String, string::String),
+    MissingFieldError(string::String),
+    UnknownVariantError(string::String),
+    ApplicationError(string::String)
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum EncoderError {
+    FmtError(fmt::Error),
+    BadHashmapKey,
 }
 
 /// Returns a readable error string for a given error code.
 pub fn error_str(error: ErrorCode) -> &'static str {
-    return match error {
+    match error {
         InvalidSyntax => "invalid syntax",
         InvalidNumber => "invalid number",
         EOFWhileParsingObject => "EOF While parsing object",
-        EOFWhileParsingList => "EOF While parsing list",
+        EOFWhileParsingArray => "EOF While parsing array",
         EOFWhileParsingValue => "EOF While parsing value",
         EOFWhileParsingString => "EOF While parsing string",
         KeyMustBeAString => "key must be a string",
         ExpectedColon => "expected `:`",
         TrailingCharacters => "trailing characters",
+        TrailingComma => "trailing comma",
         InvalidEscape => "invalid escape",
-        UnrecognizedHex => "invalid \\u escape (unrecognized hex)",
-        NotFourDigit => "invalid \\u escape (not four digits)",
+        UnrecognizedHex => "invalid \\u{ esc}ape (unrecognized hex)",
+        NotFourDigit => "invalid \\u{ esc}ape (not four digits)",
         NotUtf8 => "contents not utf-8",
         InvalidUnicodeCodePoint => "invalid Unicode code point",
         LoneLeadingSurrogateInHexEscape => "lone leading surrogate in hex escape",
@@ -285,7 +306,7 @@ pub fn error_str(error: ErrorCode) -> &'static str {
 }
 
 /// Shortcut function to decode a JSON `&str` into an object
-pub fn decode<T: ::Decodable<Decoder, DecoderError>>(s: &str) -> DecodeResult<T> {
+pub fn decode<T: ::Decodable>(s: &str) -> DecodeResult<T> {
     let json = match from_str(s) {
         Ok(x) => x,
         Err(e) => return Err(ParseError(e))
@@ -296,43 +317,108 @@ pub fn decode<T: ::Decodable<Decoder, DecoderError>>(s: &str) -> DecodeResult<T>
 }
 
 /// Shortcut function to encode a `T` into a JSON `String`
-pub fn encode<'a, T: Encodable<Encoder<'a>, io::IoError>>(object: &T) -> String {
-    let buff = Encoder::buffer_encode(object);
-    String::from_utf8(buff).unwrap()
+pub fn encode<T: ::Encodable>(object: &T) -> Result<string::String, EncoderError> {
+    let mut s = String::new();
+    {
+        let mut encoder = Encoder::new(&mut s);
+        try!(object.encode(&mut encoder));
+    }
+    Ok(s)
 }
 
-impl fmt::Show for ErrorCode {
+impl fmt::Display for ErrorCode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         error_str(*self).fmt(f)
     }
 }
 
-fn io_error_to_error(io: io::IoError) -> ParserError {
-    IoError(io.kind, io.desc)
+fn io_error_to_error(io: io::Error) -> ParserError {
+    IoError(io.kind(), io.to_string())
 }
 
-pub type EncodeResult = io::IoResult<()>;
+impl fmt::Display for ParserError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // FIXME this should be a nicer error
+        fmt::Debug::fmt(self, f)
+    }
+}
+
+impl fmt::Display for DecoderError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // FIXME this should be a nicer error
+        fmt::Debug::fmt(self, f)
+    }
+}
+
+impl std::error::Error for DecoderError {
+    fn description(&self) -> &str { "decoder error" }
+}
+
+impl fmt::Display for EncoderError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // FIXME this should be a nicer error
+        fmt::Debug::fmt(self, f)
+    }
+}
+
+impl std::error::Error for EncoderError {
+    fn description(&self) -> &str { "encoder error" }
+}
+
+impl From<fmt::Error> for EncoderError {
+    fn from(err: fmt::Error) -> EncoderError { EncoderError::FmtError(err) }
+}
+
+pub type EncodeResult = Result<(), EncoderError>;
 pub type DecodeResult<T> = Result<T, DecoderError>;
 
-pub fn escape_bytes(wr: &mut io::Writer, bytes: &[u8]) -> Result<(), io::IoError> {
+fn escape_str(wr: &mut fmt::Write, v: &str) -> EncodeResult {
     try!(wr.write_str("\""));
 
     let mut start = 0;
 
-    for (i, byte) in bytes.iter().enumerate() {
-        let escaped = match *byte {
+    for (i, byte) in v.bytes().enumerate() {
+        let escaped = match byte {
             b'"' => "\\\"",
             b'\\' => "\\\\",
+            b'\x00' => "\\u0000",
+            b'\x01' => "\\u0001",
+            b'\x02' => "\\u0002",
+            b'\x03' => "\\u0003",
+            b'\x04' => "\\u0004",
+            b'\x05' => "\\u0005",
+            b'\x06' => "\\u0006",
+            b'\x07' => "\\u0007",
             b'\x08' => "\\b",
-            b'\x0c' => "\\f",
-            b'\n' => "\\n",
-            b'\r' => "\\r",
             b'\t' => "\\t",
+            b'\n' => "\\n",
+            b'\x0b' => "\\u000b",
+            b'\x0c' => "\\f",
+            b'\r' => "\\r",
+            b'\x0e' => "\\u000e",
+            b'\x0f' => "\\u000f",
+            b'\x10' => "\\u0010",
+            b'\x11' => "\\u0011",
+            b'\x12' => "\\u0012",
+            b'\x13' => "\\u0013",
+            b'\x14' => "\\u0014",
+            b'\x15' => "\\u0015",
+            b'\x16' => "\\u0016",
+            b'\x17' => "\\u0017",
+            b'\x18' => "\\u0018",
+            b'\x19' => "\\u0019",
+            b'\x1a' => "\\u001a",
+            b'\x1b' => "\\u001b",
+            b'\x1c' => "\\u001c",
+            b'\x1d' => "\\u001d",
+            b'\x1e' => "\\u001e",
+            b'\x1f' => "\\u001f",
+            b'\x7f' => "\\u007f",
             _ => { continue; }
         };
 
         if start < i {
-            try!(wr.write(bytes.slice(start, i)));
+            try!(wr.write_str(&v[start..i]));
         }
 
         try!(wr.write_str(escaped));
@@ -340,306 +426,102 @@ pub fn escape_bytes(wr: &mut io::Writer, bytes: &[u8]) -> Result<(), io::IoError
         start = i + 1;
     }
 
-    if start != bytes.len() {
-        try!(wr.write(bytes.slice_from(start)));
+    if start != v.len() {
+        try!(wr.write_str(&v[start..]));
     }
 
-    wr.write_str("\"")
+    try!(wr.write_str("\""));
+    Ok(())
 }
 
-fn escape_str(writer: &mut io::Writer, v: &str) -> Result<(), io::IoError> {
-    escape_bytes(writer, v.as_bytes())
+fn escape_char(writer: &mut fmt::Write, v: char) -> EncodeResult {
+    let mut buf = [0; 4];
+    let n = v.encode_utf8(&mut buf).unwrap();
+    let buf = unsafe { str::from_utf8_unchecked(&buf[..n]) };
+    escape_str(writer, buf)
 }
 
-fn escape_char(writer: &mut io::Writer, v: char) -> Result<(), io::IoError> {
-    let mut buf = [0, .. 4];
-    v.encode_utf8(buf);
-    escape_bytes(writer, buf)
-}
+fn spaces(wr: &mut fmt::Write, mut n: usize) -> EncodeResult {
+    const BUF: &'static str = "                ";
 
-fn spaces(wr: &mut io::Writer, mut n: uint) -> Result<(), io::IoError> {
-    static len: uint = 16;
-    static buf: [u8, ..len] = [b' ', ..len];
-
-    while n >= len {
-        try!(wr.write(buf));
-        n -= len;
+    while n >= BUF.len() {
+        try!(wr.write_str(BUF));
+        n -= BUF.len();
     }
 
     if n > 0 {
-        wr.write(buf.slice_to(n))
-    } else {
-        Ok(())
+        try!(wr.write_str(&BUF[..n]));
     }
+    Ok(())
 }
 
-fn fmt_number_or_null(v: f64) -> String {
+fn fmt_number_or_null(v: f64) -> string::String {
     match v.classify() {
-        FPNaN | FPInfinite => String::from_str("null"),
-        _ => f64::to_str_digits(v, 6u)
+        Fp::Nan | Fp::Infinite => string::String::from("null"),
+        _ if v.fract() != 0f64 => v.to_string(),
+        _ => v.to_string() + ".0",
     }
 }
 
 /// A structure for implementing serialization to JSON.
 pub struct Encoder<'a> {
-    writer: &'a mut io::Writer+'a,
+    writer: &'a mut (fmt::Write+'a),
+    is_emitting_map_key: bool,
 }
 
 impl<'a> Encoder<'a> {
     /// Creates a new JSON encoder whose output will be written to the writer
     /// specified.
-    pub fn new(writer: &'a mut io::Writer) -> Encoder<'a> {
-        Encoder { writer: writer }
-    }
-
-    /// Encode the specified struct into a json [u8]
-    pub fn buffer_encode<T:Encodable<Encoder<'a>, io::IoError>>(object: &T) -> Vec<u8>  {
-        //Serialize the object in a string using a writer
-        let mut m = MemWriter::new();
-        // FIXME(14302) remove the transmute and unsafe block.
-        unsafe {
-            let mut encoder = Encoder::new(&mut m as &mut io::Writer);
-            // MemWriter never Errs
-            let _ = object.encode(transmute(&mut encoder));
-        }
-        m.unwrap()
-    }
-
-    /// Encode the specified struct into a json str
-    ///
-    /// Note: this function is deprecated. Consider using `json::encode` instead.
-    #[deprecated = "Replaced by `json::encode`"]
-    pub fn str_encode<T: Encodable<Encoder<'a>, io::IoError>>(object: &T) -> String {
-        encode(object)
+    pub fn new(writer: &'a mut fmt::Write) -> Encoder<'a> {
+        Encoder { writer: writer, is_emitting_map_key: false, }
     }
 }
 
-impl<'a> ::Encoder<io::IoError> for Encoder<'a> {
-    fn emit_nil(&mut self) -> EncodeResult { write!(self.writer, "null") }
-
-    fn emit_uint(&mut self, v: uint) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_u64(&mut self, v: u64) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_u32(&mut self, v: u32) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_u16(&mut self, v: u16) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_u8(&mut self, v: u8) -> EncodeResult  { self.emit_f64(v as f64) }
-
-    fn emit_int(&mut self, v: int) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_i64(&mut self, v: i64) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_i32(&mut self, v: i32) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_i16(&mut self, v: i16) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_i8(&mut self, v: i8) -> EncodeResult  { self.emit_f64(v as f64) }
-
-    fn emit_bool(&mut self, v: bool) -> EncodeResult {
-        if v {
-            write!(self.writer, "true")
+macro_rules! emit_enquoted_if_mapkey {
+    ($enc:ident,$e:expr) => {
+        if $enc.is_emitting_map_key {
+            try!(write!($enc.writer, "\"{}\"", $e));
+            Ok(())
         } else {
-            write!(self.writer, "false")
+            try!(write!($enc.writer, "{}", $e));
+            Ok(())
         }
     }
+}
 
-    fn emit_f64(&mut self, v: f64) -> EncodeResult {
-        write!(self.writer, "{}", fmt_number_or_null(v))
-    }
-    fn emit_f32(&mut self, v: f32) -> EncodeResult { self.emit_f64(v as f64) }
+impl<'a> ::Encoder for Encoder<'a> {
+    type Error = EncoderError;
 
-    fn emit_char(&mut self, v: char) -> EncodeResult {
-        escape_char(self.writer, v)
-    }
-    fn emit_str(&mut self, v: &str) -> EncodeResult {
-        escape_str(self.writer, v)
-    }
-
-    fn emit_enum(&mut self, _name: &str, f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        f(self)
-    }
-
-    fn emit_enum_variant(&mut self,
-                         name: &str,
-                         _id: uint,
-                         cnt: uint,
-                         f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        // enums are encoded as strings or objects
-        // Bunny => "Bunny"
-        // Kangaroo(34,"William") => {"variant": "Kangaroo", "fields": [34,"William"]}
-        if cnt == 0 {
-            escape_str(self.writer, name)
-        } else {
-            try!(write!(self.writer, "{{\"variant\":"));
-            try!(escape_str(self.writer, name));
-            try!(write!(self.writer, ",\"fields\":["));
-            try!(f(self));
-            write!(self.writer, "]}}")
-        }
-    }
-
-    fn emit_enum_variant_arg(&mut self,
-                             idx: uint,
-                             f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        if idx != 0 {
-            try!(write!(self.writer, ","));
-        }
-        f(self)
-    }
-
-    fn emit_enum_struct_variant(&mut self,
-                                name: &str,
-                                id: uint,
-                                cnt: uint,
-                                f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        self.emit_enum_variant(name, id, cnt, f)
-    }
-
-    fn emit_enum_struct_variant_field(&mut self,
-                                      _: &str,
-                                      idx: uint,
-                                      f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        self.emit_enum_variant_arg(idx, f)
-    }
-
-    fn emit_struct(&mut self,
-                   _: &str,
-                   _: uint,
-                   f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        try!(write!(self.writer, "{{"));
-        try!(f(self));
-        write!(self.writer, "}}")
-    }
-
-    fn emit_struct_field(&mut self,
-                         name: &str,
-                         idx: uint,
-                         f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        if idx != 0 { try!(write!(self.writer, ",")); }
-        try!(escape_str(self.writer, name));
-        try!(write!(self.writer, ":"));
-        f(self)
-    }
-
-    fn emit_tuple(&mut self, len: uint, f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        self.emit_seq(len, f)
-    }
-    fn emit_tuple_arg(&mut self,
-                      idx: uint,
-                      f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        self.emit_seq_elt(idx, f)
-    }
-
-    fn emit_tuple_struct(&mut self,
-                         _name: &str,
-                         len: uint,
-                         f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        self.emit_seq(len, f)
-    }
-    fn emit_tuple_struct_arg(&mut self,
-                             idx: uint,
-                             f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        self.emit_seq_elt(idx, f)
-    }
-
-    fn emit_option(&mut self, f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        f(self)
-    }
-    fn emit_option_none(&mut self) -> EncodeResult { self.emit_nil() }
-    fn emit_option_some(&mut self, f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        f(self)
-    }
-
-    fn emit_seq(&mut self, _len: uint, f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        try!(write!(self.writer, "["));
-        try!(f(self));
-        write!(self.writer, "]")
-    }
-
-    fn emit_seq_elt(&mut self, idx: uint, f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        if idx != 0 {
-            try!(write!(self.writer, ","));
-        }
-        f(self)
-    }
-
-    fn emit_map(&mut self, _len: uint, f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        try!(write!(self.writer, "{{"));
-        try!(f(self));
-        write!(self.writer, "}}")
-    }
-
-    fn emit_map_elt_key(&mut self,
-                        idx: uint,
-                        f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        if idx != 0 { try!(write!(self.writer, ",")) }
-        // ref #12967, make sure to wrap a key in double quotes,
-        // in the event that its of a type that omits them (eg numbers)
-        let mut buf = MemWriter::new();
-        // FIXME(14302) remove the transmute and unsafe block.
-        unsafe {
-            let mut check_encoder = Encoder::new(&mut buf);
-            try!(f(transmute(&mut check_encoder)));
-        }
-        let out = str::from_utf8(buf.get_ref()).unwrap();
-        let needs_wrapping = out.char_at(0) != '"' && out.char_at_reverse(out.len()) != '"';
-        if needs_wrapping { try!(write!(self.writer, "\"")); }
-        try!(f(self));
-        if needs_wrapping { try!(write!(self.writer, "\"")); }
+    fn emit_nil(&mut self) -> EncodeResult {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        try!(write!(self.writer, "null"));
         Ok(())
     }
 
-    fn emit_map_elt_val(&mut self,
-                        _idx: uint,
-                        f: |&mut Encoder<'a>| -> EncodeResult) -> EncodeResult {
-        try!(write!(self.writer, ":"));
-        f(self)
-    }
-}
+    fn emit_uint(&mut self, v: usize) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_u64(&mut self, v: u64) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_u32(&mut self, v: u32) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_u16(&mut self, v: u16) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_u8(&mut self, v: u8) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
 
-/// Another encoder for JSON, but prints out human-readable JSON instead of
-/// compact data
-pub struct PrettyEncoder<'a> {
-    writer: &'a mut io::Writer+'a,
-    curr_indent: uint,
-    indent: uint,
-}
-
-impl<'a> PrettyEncoder<'a> {
-    /// Creates a new encoder whose output will be written to the specified writer
-    pub fn new<'a>(writer: &'a mut io::Writer) -> PrettyEncoder<'a> {
-        PrettyEncoder { writer: writer, curr_indent: 0, indent: 2, }
-    }
-
-    /// Set the number of spaces to indent for each level.
-    /// This is safe to set during encoding.
-    pub fn set_indent<'a>(&mut self, indent: uint) {
-        // self.indent very well could be 0 so we need to use checked division.
-        let level = self.curr_indent.checked_div(&self.indent).unwrap_or(0);
-        self.indent = indent;
-        self.curr_indent = level * self.indent;
-    }
-}
-
-impl<'a> ::Encoder<io::IoError> for PrettyEncoder<'a> {
-    fn emit_nil(&mut self) -> EncodeResult { write!(self.writer, "null") }
-
-    fn emit_uint(&mut self, v: uint) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_u64(&mut self, v: u64) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_u32(&mut self, v: u32) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_u16(&mut self, v: u16) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_u8(&mut self, v: u8) -> EncodeResult { self.emit_f64(v as f64) }
-
-    fn emit_int(&mut self, v: int) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_i64(&mut self, v: i64) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_i32(&mut self, v: i32) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_i16(&mut self, v: i16) -> EncodeResult { self.emit_f64(v as f64) }
-    fn emit_i8(&mut self, v: i8) -> EncodeResult { self.emit_f64(v as f64) }
+    fn emit_int(&mut self, v: isize) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_i64(&mut self, v: i64) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_i32(&mut self, v: i32) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_i16(&mut self, v: i16) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_i8(&mut self, v: i8) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
 
     fn emit_bool(&mut self, v: bool) -> EncodeResult {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         if v {
-            write!(self.writer, "true")
+            try!(write!(self.writer, "true"));
         } else {
-            write!(self.writer, "false")
+            try!(write!(self.writer, "false"));
         }
+        Ok(())
     }
 
     fn emit_f64(&mut self, v: f64) -> EncodeResult {
-        write!(self.writer, "{}", fmt_number_or_null(v))
+        emit_enquoted_if_mapkey!(self, fmt_number_or_null(v))
     }
     fn emit_f32(&mut self, v: f32) -> EncodeResult {
         self.emit_f64(v as f64)
@@ -652,36 +534,297 @@ impl<'a> ::Encoder<io::IoError> for PrettyEncoder<'a> {
         escape_str(self.writer, v)
     }
 
-    fn emit_enum(&mut self,
-                 _name: &str,
-                 f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_enum<F>(&mut self, _name: &str, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
         f(self)
     }
 
-    fn emit_enum_variant(&mut self,
-                         name: &str,
-                         _: uint,
-                         cnt: uint,
-                         f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_enum_variant<F>(&mut self,
+                            name: &str,
+                            _id: usize,
+                            cnt: usize,
+                            f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        // enums are encoded as strings or objects
+        // Bunny => "Bunny"
+        // Kangaroo(34,"William") => {"variant": "Kangaroo", "fields": [34,"William"]}
         if cnt == 0 {
             escape_str(self.writer, name)
         } else {
+            if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+            try!(write!(self.writer, "{{\"variant\":"));
+            try!(escape_str(self.writer, name));
+            try!(write!(self.writer, ",\"fields\":["));
+            try!(f(self));
+            try!(write!(self.writer, "]}}"));
+            Ok(())
+        }
+    }
+
+    fn emit_enum_variant_arg<F>(&mut self, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        if idx != 0 {
+            try!(write!(self.writer, ","));
+        }
+        f(self)
+    }
+
+    fn emit_enum_struct_variant<F>(&mut self,
+                                   name: &str,
+                                   id: usize,
+                                   cnt: usize,
+                                   f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        self.emit_enum_variant(name, id, cnt, f)
+    }
+
+    fn emit_enum_struct_variant_field<F>(&mut self,
+                                         _: &str,
+                                         idx: usize,
+                                         f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        self.emit_enum_variant_arg(idx, f)
+    }
+
+    fn emit_struct<F>(&mut self, _: &str, _: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        try!(write!(self.writer, "{{"));
+        try!(f(self));
+        try!(write!(self.writer, "}}"));
+        Ok(())
+    }
+
+    fn emit_struct_field<F>(&mut self, name: &str, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        if idx != 0 { try!(write!(self.writer, ",")); }
+        try!(escape_str(self.writer, name));
+        try!(write!(self.writer, ":"));
+        f(self)
+    }
+
+    fn emit_tuple<F>(&mut self, len: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        self.emit_seq(len, f)
+    }
+    fn emit_tuple_arg<F>(&mut self, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        self.emit_seq_elt(idx, f)
+    }
+
+    fn emit_tuple_struct<F>(&mut self, _name: &str, len: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        self.emit_seq(len, f)
+    }
+    fn emit_tuple_struct_arg<F>(&mut self, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        self.emit_seq_elt(idx, f)
+    }
+
+    fn emit_option<F>(&mut self, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        f(self)
+    }
+    fn emit_option_none(&mut self) -> EncodeResult {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        self.emit_nil()
+    }
+    fn emit_option_some<F>(&mut self, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        f(self)
+    }
+
+    fn emit_seq<F>(&mut self, _len: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        try!(write!(self.writer, "["));
+        try!(f(self));
+        try!(write!(self.writer, "]"));
+        Ok(())
+    }
+
+    fn emit_seq_elt<F>(&mut self, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        if idx != 0 {
+            try!(write!(self.writer, ","));
+        }
+        f(self)
+    }
+
+    fn emit_map<F>(&mut self, _len: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        try!(write!(self.writer, "{{"));
+        try!(f(self));
+        try!(write!(self.writer, "}}"));
+        Ok(())
+    }
+
+    fn emit_map_elt_key<F>(&mut self, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        if idx != 0 { try!(write!(self.writer, ",")) }
+        self.is_emitting_map_key = true;
+        try!(f(self));
+        self.is_emitting_map_key = false;
+        Ok(())
+    }
+
+    fn emit_map_elt_val<F>(&mut self, _idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut Encoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        try!(write!(self.writer, ":"));
+        f(self)
+    }
+}
+
+/// Another encoder for JSON, but prints out human-readable JSON instead of
+/// compact data
+pub struct PrettyEncoder<'a> {
+    writer: &'a mut (fmt::Write+'a),
+    curr_indent: usize,
+    indent: usize,
+    is_emitting_map_key: bool,
+}
+
+impl<'a> PrettyEncoder<'a> {
+    /// Creates a new encoder whose output will be written to the specified writer
+    pub fn new(writer: &'a mut fmt::Write) -> PrettyEncoder<'a> {
+        PrettyEncoder {
+            writer: writer,
+            curr_indent: 0,
+            indent: 2,
+            is_emitting_map_key: false,
+        }
+    }
+
+    /// Set the number of spaces to indent for each level.
+    /// This is safe to set during encoding.
+    pub fn set_indent(&mut self, indent: usize) {
+        // self.indent very well could be 0 so we need to use checked division.
+        let level = self.curr_indent.checked_div(self.indent).unwrap_or(0);
+        self.indent = indent;
+        self.curr_indent = level * self.indent;
+    }
+}
+
+impl<'a> ::Encoder for PrettyEncoder<'a> {
+    type Error = EncoderError;
+
+    fn emit_nil(&mut self) -> EncodeResult {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        try!(write!(self.writer, "null"));
+        Ok(())
+    }
+
+    fn emit_uint(&mut self, v: usize) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_u64(&mut self, v: u64) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_u32(&mut self, v: u32) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_u16(&mut self, v: u16) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_u8(&mut self, v: u8) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+
+    fn emit_int(&mut self, v: isize) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_i64(&mut self, v: i64) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_i32(&mut self, v: i32) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_i16(&mut self, v: i16) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+    fn emit_i8(&mut self, v: i8) -> EncodeResult { emit_enquoted_if_mapkey!(self, v) }
+
+    fn emit_bool(&mut self, v: bool) -> EncodeResult {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        if v {
+            try!(write!(self.writer, "true"));
+        } else {
+            try!(write!(self.writer, "false"));
+        }
+        Ok(())
+    }
+
+    fn emit_f64(&mut self, v: f64) -> EncodeResult {
+        emit_enquoted_if_mapkey!(self, fmt_number_or_null(v))
+    }
+    fn emit_f32(&mut self, v: f32) -> EncodeResult {
+        self.emit_f64(v as f64)
+    }
+
+    fn emit_char(&mut self, v: char) -> EncodeResult {
+        escape_char(self.writer, v)
+    }
+    fn emit_str(&mut self, v: &str) -> EncodeResult {
+        escape_str(self.writer, v)
+    }
+
+    fn emit_enum<F>(&mut self, _name: &str, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        f(self)
+    }
+
+    fn emit_enum_variant<F>(&mut self,
+                            name: &str,
+                            _id: usize,
+                            cnt: usize,
+                            f: F)
+                            -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if cnt == 0 {
+            escape_str(self.writer, name)
+        } else {
+            if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+            try!(write!(self.writer, "{{\n"));
             self.curr_indent += self.indent;
-            try!(write!(self.writer, "[\n"));
             try!(spaces(self.writer, self.curr_indent));
+            try!(write!(self.writer, "\"variant\": "));
             try!(escape_str(self.writer, name));
             try!(write!(self.writer, ",\n"));
+            try!(spaces(self.writer, self.curr_indent));
+            try!(write!(self.writer, "\"fields\": [\n"));
+            self.curr_indent += self.indent;
             try!(f(self));
             self.curr_indent -= self.indent;
             try!(write!(self.writer, "\n"));
             try!(spaces(self.writer, self.curr_indent));
-            write!(self.writer, "]")
+            self.curr_indent -= self.indent;
+            try!(write!(self.writer, "]\n"));
+            try!(spaces(self.writer, self.curr_indent));
+            try!(write!(self.writer, "}}"));
+            Ok(())
         }
     }
 
-    fn emit_enum_variant_arg(&mut self,
-                             idx: uint,
-                             f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_enum_variant_arg<F>(&mut self, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         if idx != 0 {
             try!(write!(self.writer, ",\n"));
         }
@@ -689,28 +832,34 @@ impl<'a> ::Encoder<io::IoError> for PrettyEncoder<'a> {
         f(self)
     }
 
-    fn emit_enum_struct_variant(&mut self,
-                                name: &str,
-                                id: uint,
-                                cnt: uint,
-                                f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_enum_struct_variant<F>(&mut self,
+                                   name: &str,
+                                   id: usize,
+                                   cnt: usize,
+                                   f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         self.emit_enum_variant(name, id, cnt, f)
     }
 
-    fn emit_enum_struct_variant_field(&mut self,
-                                      _: &str,
-                                      idx: uint,
-                                      f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_enum_struct_variant_field<F>(&mut self,
+                                         _: &str,
+                                         idx: usize,
+                                         f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         self.emit_enum_variant_arg(idx, f)
     }
 
 
-    fn emit_struct(&mut self,
-                   _: &str,
-                   len: uint,
-                   f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_struct<F>(&mut self, _: &str, len: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         if len == 0 {
-            write!(self.writer, "{{}}")
+            try!(write!(self.writer, "{{}}"));
         } else {
             try!(write!(self.writer, "{{"));
             self.curr_indent += self.indent;
@@ -718,14 +867,15 @@ impl<'a> ::Encoder<io::IoError> for PrettyEncoder<'a> {
             self.curr_indent -= self.indent;
             try!(write!(self.writer, "\n"));
             try!(spaces(self.writer, self.curr_indent));
-            write!(self.writer, "}}")
+            try!(write!(self.writer, "}}"));
         }
+        Ok(())
     }
 
-    fn emit_struct_field(&mut self,
-                         name: &str,
-                         idx: uint,
-                         f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_struct_field<F>(&mut self, name: &str, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         if idx == 0 {
             try!(write!(self.writer, "\n"));
         } else {
@@ -737,42 +887,55 @@ impl<'a> ::Encoder<io::IoError> for PrettyEncoder<'a> {
         f(self)
     }
 
-    fn emit_tuple(&mut self,
-                  len: uint,
-                  f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_tuple<F>(&mut self, len: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         self.emit_seq(len, f)
     }
-    fn emit_tuple_arg(&mut self,
-                      idx: uint,
-                      f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_tuple_arg<F>(&mut self, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         self.emit_seq_elt(idx, f)
     }
 
-    fn emit_tuple_struct(&mut self,
-                         _: &str,
-                         len: uint,
-                         f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_tuple_struct<F>(&mut self, _: &str, len: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         self.emit_seq(len, f)
     }
-    fn emit_tuple_struct_arg(&mut self,
-                             idx: uint,
-                             f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_tuple_struct_arg<F>(&mut self, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         self.emit_seq_elt(idx, f)
     }
 
-    fn emit_option(&mut self, f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_option<F>(&mut self, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         f(self)
     }
-    fn emit_option_none(&mut self) -> EncodeResult { self.emit_nil() }
-    fn emit_option_some(&mut self, f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_option_none(&mut self) -> EncodeResult {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
+        self.emit_nil()
+    }
+    fn emit_option_some<F>(&mut self, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         f(self)
     }
 
-    fn emit_seq(&mut self,
-                len: uint,
-                f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_seq<F>(&mut self, len: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         if len == 0 {
-            write!(self.writer, "[]")
+            try!(write!(self.writer, "[]"));
         } else {
             try!(write!(self.writer, "["));
             self.curr_indent += self.indent;
@@ -780,13 +943,15 @@ impl<'a> ::Encoder<io::IoError> for PrettyEncoder<'a> {
             self.curr_indent -= self.indent;
             try!(write!(self.writer, "\n"));
             try!(spaces(self.writer, self.curr_indent));
-            write!(self.writer, "]")
+            try!(write!(self.writer, "]"));
         }
+        Ok(())
     }
 
-    fn emit_seq_elt(&mut self,
-                    idx: uint,
-                    f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_seq_elt<F>(&mut self, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         if idx == 0 {
             try!(write!(self.writer, "\n"));
         } else {
@@ -796,11 +961,12 @@ impl<'a> ::Encoder<io::IoError> for PrettyEncoder<'a> {
         f(self)
     }
 
-    fn emit_map(&mut self,
-                len: uint,
-                f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_map<F>(&mut self, len: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         if len == 0 {
-            write!(self.writer, "{{}}")
+            try!(write!(self.writer, "{{}}"));
         } else {
             try!(write!(self.writer, "{{"));
             self.curr_indent += self.indent;
@@ -808,84 +974,75 @@ impl<'a> ::Encoder<io::IoError> for PrettyEncoder<'a> {
             self.curr_indent -= self.indent;
             try!(write!(self.writer, "\n"));
             try!(spaces(self.writer, self.curr_indent));
-            write!(self.writer, "}}")
+            try!(write!(self.writer, "}}"));
         }
+        Ok(())
     }
 
-    fn emit_map_elt_key(&mut self,
-                        idx: uint,
-                        f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_map_elt_key<F>(&mut self, idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         if idx == 0 {
             try!(write!(self.writer, "\n"));
         } else {
             try!(write!(self.writer, ",\n"));
         }
         try!(spaces(self.writer, self.curr_indent));
-        // ref #12967, make sure to wrap a key in double quotes,
-        // in the event that its of a type that omits them (eg numbers)
-        let mut buf = MemWriter::new();
-        // FIXME(14302) remove the transmute and unsafe block.
-        unsafe {
-            let mut check_encoder = PrettyEncoder::new(&mut buf);
-            try!(f(transmute(&mut check_encoder)));
-        }
-        let out = str::from_utf8(buf.get_ref()).unwrap();
-        let needs_wrapping = out.char_at(0) != '"' && out.char_at_reverse(out.len()) != '"';
-        if needs_wrapping { try!(write!(self.writer, "\"")); }
+        self.is_emitting_map_key = true;
         try!(f(self));
-        if needs_wrapping { try!(write!(self.writer, "\"")); }
+        self.is_emitting_map_key = false;
         Ok(())
     }
 
-    fn emit_map_elt_val(&mut self,
-                        _idx: uint,
-                        f: |&mut PrettyEncoder<'a>| -> EncodeResult) -> EncodeResult {
+    fn emit_map_elt_val<F>(&mut self, _idx: usize, f: F) -> EncodeResult where
+        F: FnOnce(&mut PrettyEncoder<'a>) -> EncodeResult,
+    {
+        if self.is_emitting_map_key { return Err(EncoderError::BadHashmapKey); }
         try!(write!(self.writer, ": "));
         f(self)
     }
 }
 
-impl<E: ::Encoder<S>, S> Encodable<E, S> for Json {
-    fn encode(&self, e: &mut E) -> Result<(), S> {
+impl Encodable for Json {
+    fn encode<E: ::Encoder>(&self, e: &mut E) -> Result<(), E::Error> {
         match *self {
-            I64(v) => v.encode(e),
-            U64(v) => v.encode(e),
-            F64(v) => v.encode(e),
-            String(ref v) => v.encode(e),
-            Boolean(v) => v.encode(e),
-            List(ref v) => v.encode(e),
-            Object(ref v) => v.encode(e),
-            Null => e.emit_nil(),
+            Json::I64(v) => v.encode(e),
+            Json::U64(v) => v.encode(e),
+            Json::F64(v) => v.encode(e),
+            Json::String(ref v) => v.encode(e),
+            Json::Boolean(v) => v.encode(e),
+            Json::Array(ref v) => v.encode(e),
+            Json::Object(ref v) => v.encode(e),
+            Json::Null => e.emit_nil(),
         }
     }
 }
 
+/// Create an `AsJson` wrapper which can be used to print a value as JSON
+/// on-the-fly via `write!`
+pub fn as_json<T>(t: &T) -> AsJson<T> {
+    AsJson { inner: t }
+}
+
+/// Create an `AsPrettyJson` wrapper which can be used to print a value as JSON
+/// on-the-fly via `write!`
+pub fn as_pretty_json<T>(t: &T) -> AsPrettyJson<T> {
+    AsPrettyJson { inner: t, indent: None }
+}
+
 impl Json {
-    /// Encodes a json value into an io::writer. Uses a single line.
-    pub fn to_writer(&self, writer: &mut io::Writer) -> EncodeResult {
-        let mut encoder = Encoder::new(writer);
-        self.encode(&mut encoder)
-    }
-
-    /// Encodes a json value into an io::writer.
-    /// Pretty-prints in a more readable format.
-    pub fn to_pretty_writer(&self, writer: &mut io::Writer) -> EncodeResult {
-        let mut encoder = PrettyEncoder::new(writer);
-        self.encode(&mut encoder)
-    }
-
-    /// Encodes a json value into a string
-    pub fn to_pretty_str(&self) -> String {
-        let mut s = MemWriter::new();
-        self.to_pretty_writer(&mut s as &mut io::Writer).unwrap();
-        String::from_utf8(s.unwrap()).unwrap()
+    /// Borrow this json object as a pretty object to generate a pretty
+    /// representation for it via `Display`.
+    pub fn pretty(&self) -> PrettyJson {
+        PrettyJson { inner: self }
     }
 
      /// If the Json value is an Object, returns the value associated with the provided key.
     /// Otherwise, returns None.
-    pub fn find<'a>(&'a self, key: &String) -> Option<&'a Json>{
+    pub fn find<'a>(&'a self, key: &str) -> Option<&'a Json>{
         match self {
-            &Object(ref map) => map.find(key),
+            &Json::Object(ref map) => map.get(key),
             _ => None
         }
     }
@@ -893,9 +1050,9 @@ impl Json {
     /// Attempts to get a nested Json Object for each key in `keys`.
     /// If any key is found not to exist, find_path will return None.
     /// Otherwise, it will return the Json value associated with the final key.
-    pub fn find_path<'a>(&'a self, keys: &[&String]) -> Option<&'a Json>{
+    pub fn find_path<'a>(&'a self, keys: &[&str]) -> Option<&'a Json>{
         let mut target = self;
-        for key in keys.iter() {
+        for key in keys {
             match target.find(*key) {
                 Some(t) => { target = t; },
                 None => return None
@@ -907,20 +1064,19 @@ impl Json {
     /// If the Json value is an Object, performs a depth-first search until
     /// a value associated with the provided key is found. If no value is found
     /// or the Json value is not an Object, returns None.
-    pub fn search<'a>(&'a self, key: &String) -> Option<&'a Json> {
+    pub fn search<'a>(&'a self, key: &str) -> Option<&'a Json> {
         match self {
-            &Object(ref map) => {
-                match map.find(key) {
+            &Json::Object(ref map) => {
+                match map.get(key) {
                     Some(json_value) => Some(json_value),
                     None => {
-                        let mut value : Option<&'a Json> = None;
-                        for (_, v) in map.iter() {
-                            value = v.search(key);
-                            if value.is_some() {
-                                break;
+                        for (_, v) in map {
+                            match v.search(key) {
+                                x if x.is_some() => return x,
+                                _ => ()
                             }
                         }
-                        value
+                        None
                     }
                 }
             },
@@ -933,25 +1089,25 @@ impl Json {
         self.as_object().is_some()
     }
 
-    /// If the Json value is an Object, returns the associated TreeMap.
+    /// If the Json value is an Object, returns the associated BTreeMap.
     /// Returns None otherwise.
     pub fn as_object<'a>(&'a self) -> Option<&'a Object> {
         match self {
-            &Object(ref map) => Some(map),
+            &Json::Object(ref map) => Some(map),
             _ => None
         }
     }
 
-    /// Returns true if the Json value is a List. Returns false otherwise.
-    pub fn is_list<'a>(&'a self) -> bool {
-        self.as_list().is_some()
+    /// Returns true if the Json value is an Array. Returns false otherwise.
+    pub fn is_array<'a>(&'a self) -> bool {
+        self.as_array().is_some()
     }
 
-    /// If the Json value is a List, returns the associated vector.
+    /// If the Json value is an Array, returns the associated vector.
     /// Returns None otherwise.
-    pub fn as_list<'a>(&'a self) -> Option<&'a List> {
+    pub fn as_array<'a>(&'a self) -> Option<&'a Array> {
         match self {
-            &List(ref list) => Some(&*list),
+            &Json::Array(ref array) => Some(&*array),
             _ => None
         }
     }
@@ -965,7 +1121,7 @@ impl Json {
     /// Returns None otherwise.
     pub fn as_string<'a>(&'a self) -> Option<&'a str> {
         match *self {
-            String(ref s) => Some(s.as_slice()),
+            Json::String(ref s) => Some(&s[..]),
             _ => None
         }
     }
@@ -973,7 +1129,7 @@ impl Json {
     /// Returns true if the Json value is a Number. Returns false otherwise.
     pub fn is_number(&self) -> bool {
         match *self {
-            I64(_) | U64(_) | F64(_) => true,
+            Json::I64(_) | Json::U64(_) | Json::F64(_) => true,
             _ => false,
         }
     }
@@ -981,7 +1137,7 @@ impl Json {
     /// Returns true if the Json value is a i64. Returns false otherwise.
     pub fn is_i64(&self) -> bool {
         match *self {
-            I64(_) => true,
+            Json::I64(_) => true,
             _ => false,
         }
     }
@@ -989,7 +1145,7 @@ impl Json {
     /// Returns true if the Json value is a u64. Returns false otherwise.
     pub fn is_u64(&self) -> bool {
         match *self {
-            U64(_) => true,
+            Json::U64(_) => true,
             _ => false,
         }
     }
@@ -997,7 +1153,7 @@ impl Json {
     /// Returns true if the Json value is a f64. Returns false otherwise.
     pub fn is_f64(&self) -> bool {
         match *self {
-            F64(_) => true,
+            Json::F64(_) => true,
             _ => false,
         }
     }
@@ -1006,8 +1162,8 @@ impl Json {
     /// Returns None otherwise.
     pub fn as_i64(&self) -> Option<i64> {
         match *self {
-            I64(n) => Some(n),
-            U64(n) => num::cast(n),
+            Json::I64(n) => Some(n),
+            Json::U64(n) => Some(n as i64),
             _ => None
         }
     }
@@ -1016,8 +1172,8 @@ impl Json {
     /// Returns None otherwise.
     pub fn as_u64(&self) -> Option<u64> {
         match *self {
-            I64(n) => num::cast(n),
-            U64(n) => Some(n),
+            Json::I64(n) => Some(n as u64),
+            Json::U64(n) => Some(n),
             _ => None
         }
     }
@@ -1026,9 +1182,9 @@ impl Json {
     /// Returns None otherwise.
     pub fn as_f64(&self) -> Option<f64> {
         match *self {
-            I64(n) => num::cast(n),
-            U64(n) => num::cast(n),
-            F64(n) => Some(n),
+            Json::I64(n) => Some(n as f64),
+            Json::U64(n) => Some(n as f64),
+            Json::F64(n) => Some(n),
             _ => None
         }
     }
@@ -1042,7 +1198,7 @@ impl Json {
     /// Returns None otherwise.
     pub fn as_boolean(&self) -> Option<bool> {
         match self {
-            &Boolean(b) => Some(b),
+            &Json::Boolean(b) => Some(b),
             _ => None
         }
     }
@@ -1056,34 +1212,53 @@ impl Json {
     /// Returns None otherwise.
     pub fn as_null(&self) -> Option<()> {
         match self {
-            &Null => Some(()),
+            &Json::Null => Some(()),
             _ => None
         }
     }
 }
 
+impl<'a> Index<&'a str>  for Json {
+    type Output = Json;
+
+    fn index(&self, idx: &'a str) -> &Json {
+        self.find(idx).unwrap()
+    }
+}
+
+impl Index<usize> for Json {
+    type Output = Json;
+
+    fn index<'a>(&'a self, idx: usize) -> &'a Json {
+        match self {
+            &Json::Array(ref v) => &v[idx],
+            _ => panic!("can only index Json with usize if it is an array")
+        }
+    }
+}
+
 /// The output of the streaming parser.
-#[deriving(PartialEq, Clone, Show)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum JsonEvent {
     ObjectStart,
     ObjectEnd,
-    ListStart,
-    ListEnd,
+    ArrayStart,
+    ArrayEnd,
     BooleanValue(bool),
     I64Value(i64),
     U64Value(u64),
     F64Value(f64),
-    StringValue(String),
+    StringValue(string::String),
     NullValue,
     Error(ParserError),
 }
 
-#[deriving(PartialEq, Show)]
+#[derive(PartialEq, Debug)]
 enum ParserState {
-    // Parse a value in a list, true means first element.
-    ParseList(bool),
-    // Parse ',' or ']' after an element in a list.
-    ParseListComma,
+    // Parse a value in an array, true means first element.
+    ParseArray(bool),
+    // Parse ',' or ']' after an element in an array.
+    ParseArrayComma,
     // Parse a key:value in an object, true means first element.
     ParseObject(bool),
     // Parse ',' or ']' after an element in an object.
@@ -1105,9 +1280,10 @@ pub struct Stack {
 }
 
 /// StackElements compose a Stack.
-/// For example, Key("foo"), Key("bar"), Index(3) and Key("x") are the
+/// For example, StackElement::Key("foo"), StackElement::Key("bar"),
+/// StackElement::Index(3) and StackElement::Key("x") are the
 /// StackElements compositing the stack that represents foo.bar[3].x
-#[deriving(PartialEq, Clone, Show)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum StackElement<'l> {
     Index(u32),
     Key(&'l str),
@@ -1115,7 +1291,7 @@ pub enum StackElement<'l> {
 
 // Internally, Key elements are stored as indices in a buffer to avoid
 // allocating a string for every member of an object.
-#[deriving(PartialEq, Clone, Show)]
+#[derive(PartialEq, Clone, Debug)]
 enum InternalStackElement {
     InternalIndex(u32),
     InternalKey(u16, u16), // start, size
@@ -1127,7 +1303,7 @@ impl Stack {
     }
 
     /// Returns The number of elements in the Stack.
-    pub fn len(&self) -> uint { self.stack.len() }
+    pub fn len(&self) -> usize { self.stack.len() }
 
     /// Returns true if the stack is empty.
     pub fn is_empty(&self) -> bool { self.stack.is_empty() }
@@ -1135,12 +1311,13 @@ impl Stack {
     /// Provides access to the StackElement at a given index.
     /// lower indices are at the bottom of the stack while higher indices are
     /// at the top.
-    pub fn get<'l>(&'l self, idx: uint) -> StackElement<'l> {
+    pub fn get<'l>(&'l self, idx: usize) -> StackElement<'l> {
         match self.stack[idx] {
-            InternalIndex(i) => { Index(i) }
+            InternalIndex(i) => StackElement::Index(i),
             InternalKey(start, size) => {
-                Key(str::from_utf8(
-                    self.str_buffer.slice(start as uint, start as uint + size as uint)).unwrap())
+                StackElement::Key(str::from_utf8(
+                    &self.str_buffer[start as usize .. start as usize + size as usize])
+                        .unwrap())
             }
         }
     }
@@ -1148,7 +1325,7 @@ impl Stack {
     /// Compares this stack with an array of StackElements.
     pub fn is_equal_to(&self, rhs: &[StackElement]) -> bool {
         if self.stack.len() != rhs.len() { return false; }
-        for i in range(0, rhs.len()) {
+        for i in 0..rhs.len() {
             if self.get(i) != rhs[i] { return false; }
         }
         return true;
@@ -1158,7 +1335,7 @@ impl Stack {
     /// the ones passed as parameter.
     pub fn starts_with(&self, rhs: &[StackElement]) -> bool {
         if self.stack.len() < rhs.len() { return false; }
-        for i in range(0, rhs.len()) {
+        for i in 0..rhs.len() {
             if self.get(i) != rhs[i] { return false; }
         }
         return true;
@@ -1169,7 +1346,7 @@ impl Stack {
     pub fn ends_with(&self, rhs: &[StackElement]) -> bool {
         if self.stack.len() < rhs.len() { return false; }
         let offset = self.stack.len() - rhs.len();
-        for i in range(0, rhs.len()) {
+        for i in 0..rhs.len() {
             if self.get(i + offset) != rhs[i] { return false; }
         }
         return true;
@@ -1179,24 +1356,24 @@ impl Stack {
     pub fn top<'l>(&'l self) -> Option<StackElement<'l>> {
         return match self.stack.last() {
             None => None,
-            Some(&InternalIndex(i)) => Some(Index(i)),
+            Some(&InternalIndex(i)) => Some(StackElement::Index(i)),
             Some(&InternalKey(start, size)) => {
-                Some(Key(str::from_utf8(
-                    self.str_buffer.slice(start as uint, (start+size) as uint)
+                Some(StackElement::Key(str::from_utf8(
+                    &self.str_buffer[start as usize .. (start+size) as usize]
                 ).unwrap()))
             }
         }
     }
 
-    // Used by Parser to insert Key elements at the top of the stack.
-    fn push_key(&mut self, key: String) {
+    // Used by Parser to insert StackElement::Key elements at the top of the stack.
+    fn push_key(&mut self, key: string::String) {
         self.stack.push(InternalKey(self.str_buffer.len() as u16, key.len() as u16));
-        for c in key.as_bytes().iter() {
+        for c in key.as_bytes() {
             self.str_buffer.push(*c);
         }
     }
 
-    // Used by Parser to insert Index elements at the top of the stack.
+    // Used by Parser to insert StackElement::Index elements at the top of the stack.
     fn push_index(&mut self, index: u32) {
         self.stack.push(InternalIndex(index));
     }
@@ -1206,7 +1383,7 @@ impl Stack {
         assert!(!self.is_empty());
         match *self.stack.last().unwrap() {
             InternalKey(_, sz) => {
-                let new_size = self.str_buffer.len() - sz as uint;
+                let new_size = self.str_buffer.len() - sz as usize;
                 self.str_buffer.truncate(new_size);
             }
             InternalIndex(_) => {}
@@ -1228,9 +1405,9 @@ impl Stack {
         let len = self.stack.len();
         let idx = match *self.stack.last().unwrap() {
             InternalIndex(i) => { i + 1 }
-            _ => { fail!(); }
+            _ => { panic!(); }
         };
-        *self.stack.get_mut(len - 1) = InternalIndex(idx);
+        self.stack[len - 1] = InternalIndex(idx);
     }
 }
 
@@ -1239,8 +1416,8 @@ impl Stack {
 pub struct Parser<T> {
     rdr: T,
     ch: Option<char>,
-    line: uint,
-    col: uint,
+    line: usize,
+    col: usize,
     // We maintain a stack representing where we are in the logical structure
     // of the JSON stream.
     stack: Stack,
@@ -1248,7 +1425,9 @@ pub struct Parser<T> {
     state: ParserState,
 }
 
-impl<T: Iterator<char>> Iterator<JsonEvent> for Parser<T> {
+impl<T: Iterator<Item=char>> Iterator for Parser<T> {
+    type Item = JsonEvent;
+
     fn next(&mut self) -> Option<JsonEvent> {
         if self.state == ParseFinished {
             return None;
@@ -1269,7 +1448,7 @@ impl<T: Iterator<char>> Iterator<JsonEvent> for Parser<T> {
     }
 }
 
-impl<T: Iterator<char>> Parser<T> {
+impl<T: Iterator<Item=char>> Parser<T> {
     /// Creates the JSON parser.
     pub fn new(rdr: T) -> Parser<T> {
         let mut p = Parser {
@@ -1296,10 +1475,10 @@ impl<T: Iterator<char>> Parser<T> {
         self.ch = self.rdr.next();
 
         if self.ch_is('\n') {
-            self.line += 1u;
-            self.col = 1u;
+            self.line += 1;
+            self.col = 1;
         } else {
-            self.col += 1u;
+            self.col += 1;
         }
     }
 
@@ -1311,7 +1490,7 @@ impl<T: Iterator<char>> Parser<T> {
         self.ch == Some(c)
     }
 
-    fn error<T>(&self, reason: ErrorCode) -> Result<T, ParserError> {
+    fn error<U>(&self, reason: ErrorCode) -> Result<U, ParserError> {
         Err(SyntaxError(reason, self.line, self.col))
     }
 
@@ -1359,7 +1538,7 @@ impl<T: Iterator<char>> Parser<T> {
             F64Value(res)
         } else {
             if neg {
-                let res = -(res as i64);
+                let res = (res as i64).wrapping_neg();
 
                 // Make sure we didn't underflow.
                 if res > 0 {
@@ -1373,8 +1552,9 @@ impl<T: Iterator<char>> Parser<T> {
         }
     }
 
+    #[allow(deprecated)] // possible resolve bug is mapping these to traits
     fn parse_u64(&mut self) -> Result<u64, ParserError> {
-        let mut accum = 0;
+        let mut accum = 0u64;
         let last_accum = 0; // necessary to detect overflow.
 
         match self.ch_or_null() {
@@ -1383,16 +1563,16 @@ impl<T: Iterator<char>> Parser<T> {
 
                 // A leading '0' must be the only digit before the decimal point.
                 match self.ch_or_null() {
-                    '0' .. '9' => return self.error(InvalidNumber),
+                    '0' ... '9' => return self.error(InvalidNumber),
                     _ => ()
                 }
             },
-            '1' .. '9' => {
+            '1' ... '9' => {
                 while !self.eof() {
                     match self.ch_or_null() {
-                        c @ '0' .. '9' => {
-                            accum *= 10;
-                            accum += (c as u64) - ('0' as u64);
+                        c @ '0' ... '9' => {
+                            accum = accum.wrapping_mul(10);
+                            accum = accum.wrapping_add((c as u64) - ('0' as u64));
 
                             // Detect overflow by comparing to the last value.
                             if accum <= last_accum { return self.error(InvalidNumber); }
@@ -1414,16 +1594,16 @@ impl<T: Iterator<char>> Parser<T> {
 
         // Make sure a digit follows the decimal place.
         match self.ch_or_null() {
-            '0' .. '9' => (),
+            '0' ... '9' => (),
              _ => return self.error(InvalidNumber)
         }
 
         let mut dec = 1.0;
         while !self.eof() {
             match self.ch_or_null() {
-                c @ '0' .. '9' => {
+                c @ '0' ... '9' => {
                     dec /= 10.0;
-                    res += (((c as int) - ('0' as int)) as f64) * dec;
+                    res += (((c as isize) - ('0' as isize)) as f64) * dec;
                     self.bump();
                 }
                 _ => break,
@@ -1436,7 +1616,7 @@ impl<T: Iterator<char>> Parser<T> {
     fn parse_exponent(&mut self, mut res: f64) -> Result<f64, ParserError> {
         self.bump();
 
-        let mut exp = 0u;
+        let mut exp = 0;
         let mut neg_exp = false;
 
         if self.ch_is('+') {
@@ -1448,14 +1628,14 @@ impl<T: Iterator<char>> Parser<T> {
 
         // Make sure a digit follows the exponent place.
         match self.ch_or_null() {
-            '0' .. '9' => (),
+            '0' ... '9' => (),
             _ => return self.error(InvalidNumber)
         }
         while !self.eof() {
             match self.ch_or_null() {
-                c @ '0' .. '9' => {
+                c @ '0' ... '9' => {
                     exp *= 10;
-                    exp += (c as uint) - ('0' as uint);
+                    exp += (c as usize) - ('0' as usize);
 
                     self.bump();
                 }
@@ -1463,7 +1643,7 @@ impl<T: Iterator<char>> Parser<T> {
             }
         }
 
-        let exp = num::pow(10_f64, exp);
+        let exp = 10_f64.powi(exp as i32);
         if neg_exp {
             res /= exp;
         } else {
@@ -1474,12 +1654,12 @@ impl<T: Iterator<char>> Parser<T> {
     }
 
     fn decode_hex_escape(&mut self) -> Result<u16, ParserError> {
-        let mut i = 0u;
-        let mut n = 0u16;
+        let mut i = 0;
+        let mut n = 0;
         while i < 4 && !self.eof() {
             self.bump();
             n = match self.ch_or_null() {
-                c @ '0' .. '9' => n * 16 + ((c as u16) - ('0' as u16)),
+                c @ '0' ... '9' => n * 16 + ((c as u16) - ('0' as u16)),
                 'a' | 'A' => n * 16 + 10,
                 'b' | 'B' => n * 16 + 11,
                 'c' | 'C' => n * 16 + 12,
@@ -1489,7 +1669,7 @@ impl<T: Iterator<char>> Parser<T> {
                 _ => return self.error(InvalidEscape)
             };
 
-            i += 1u;
+            i += 1;
         }
 
         // Error out if we didn't parse 4 digits.
@@ -1500,9 +1680,9 @@ impl<T: Iterator<char>> Parser<T> {
         Ok(n)
     }
 
-    fn parse_str(&mut self) -> Result<String, ParserError> {
+    fn parse_str(&mut self) -> Result<string::String, ParserError> {
         let mut escape = false;
-        let mut res = String::new();
+        let mut res = string::String::new();
 
         loop {
             self.bump();
@@ -1512,34 +1692,36 @@ impl<T: Iterator<char>> Parser<T> {
 
             if escape {
                 match self.ch_or_null() {
-                    '"' => res.push_char('"'),
-                    '\\' => res.push_char('\\'),
-                    '/' => res.push_char('/'),
-                    'b' => res.push_char('\x08'),
-                    'f' => res.push_char('\x0c'),
-                    'n' => res.push_char('\n'),
-                    'r' => res.push_char('\r'),
-                    't' => res.push_char('\t'),
+                    '"' => res.push('"'),
+                    '\\' => res.push('\\'),
+                    '/' => res.push('/'),
+                    'b' => res.push('\x08'),
+                    'f' => res.push('\x0c'),
+                    'n' => res.push('\n'),
+                    'r' => res.push('\r'),
+                    't' => res.push('\t'),
                     'u' => match try!(self.decode_hex_escape()) {
-                        0xDC00 .. 0xDFFF => return self.error(LoneLeadingSurrogateInHexEscape),
+                        0xDC00 ... 0xDFFF => {
+                            return self.error(LoneLeadingSurrogateInHexEscape)
+                        }
 
                         // Non-BMP characters are encoded as a sequence of
                         // two hex escapes, representing UTF-16 surrogates.
-                        n1 @ 0xD800 .. 0xDBFF => {
+                        n1 @ 0xD800 ... 0xDBFF => {
                             match (self.next_char(), self.next_char()) {
                                 (Some('\\'), Some('u')) => (),
                                 _ => return self.error(UnexpectedEndOfHexEscape),
                             }
 
                             let buf = [n1, try!(self.decode_hex_escape())];
-                            match str::utf16_items(buf.as_slice()).next() {
-                                Some(ScalarValue(c)) => res.push_char(c),
+                            match unicode_str::utf16_items(&buf).next() {
+                                Some(Utf16Item::ScalarValue(c)) => res.push(c),
                                 _ => return self.error(LoneLeadingSurrogateInHexEscape),
                             }
                         }
 
                         n => match char::from_u32(n as u32) {
-                            Some(c) => res.push_char(c),
+                            Some(c) => res.push(c),
                             None => return self.error(InvalidUnicodeCodePoint),
                         },
                     },
@@ -1554,7 +1736,7 @@ impl<T: Iterator<char>> Parser<T> {
                         self.bump();
                         return Ok(res);
                     },
-                    Some(c) => res.push_char(c),
+                    Some(c) => res.push(c),
                     None => unreachable!()
                 }
             }
@@ -1565,14 +1747,14 @@ impl<T: Iterator<char>> Parser<T> {
     // information to return a JsonEvent.
     // Manages an internal state so that parsing can be interrupted and resumed.
     // Also keeps track of the position in the logical structure of the json
-    // stream int the form of a stack that can be queried by the user using the
+    // stream isize the form of a stack that can be queried by the user using the
     // stack() method.
     fn parse(&mut self) -> JsonEvent {
         loop {
             // The only paths where the loop can spin a new iteration
-            // are in the cases ParseListComma and ParseObjectComma if ','
+            // are in the cases ParseArrayComma and ParseObjectComma if ','
             // is parsed. In these cases the state is set to (respectively)
-            // ParseList(false) and ParseObject(false), which always return,
+            // ParseArray(false) and ParseObject(false), which always return,
             // so there is no risk of getting stuck in an infinite loop.
             // All other paths return before the end of the loop's iteration.
             self.parse_whitespace();
@@ -1581,11 +1763,11 @@ impl<T: Iterator<char>> Parser<T> {
                 ParseStart => {
                     return self.parse_start();
                 }
-                ParseList(first) => {
-                    return self.parse_list(first);
+                ParseArray(first) => {
+                    return self.parse_array(first);
                 }
-                ParseListComma => {
-                    match self.parse_list_comma_or_end() {
+                ParseArrayComma => {
+                    match self.parse_array_comma_or_end() {
                         Some(evt) => { return evt; }
                         None => {}
                     }
@@ -1612,86 +1794,84 @@ impl<T: Iterator<char>> Parser<T> {
     fn parse_start(&mut self) -> JsonEvent {
         let val = self.parse_value();
         self.state = match val {
-            Error(_) => { ParseFinished }
-            ListStart => { ParseList(true) }
-            ObjectStart => { ParseObject(true) }
-            _ => { ParseBeforeFinish }
+            Error(_) => ParseFinished,
+            ArrayStart => ParseArray(true),
+            ObjectStart => ParseObject(true),
+            _ => ParseBeforeFinish,
         };
         return val;
     }
 
-    fn parse_list(&mut self, first: bool) -> JsonEvent {
+    fn parse_array(&mut self, first: bool) -> JsonEvent {
         if self.ch_is(']') {
             if !first {
-                return self.error_event(InvalidSyntax);
-            }
-            if self.stack.is_empty() {
-                self.state = ParseBeforeFinish;
+                self.error_event(InvalidSyntax)
             } else {
-                self.state = if self.stack.last_is_index() {
-                    ParseListComma
+                self.state = if self.stack.is_empty() {
+                    ParseBeforeFinish
+                } else if self.stack.last_is_index() {
+                    ParseArrayComma
                 } else {
                     ParseObjectComma
-                }
+                };
+                self.bump();
+                ArrayEnd
             }
-            self.bump();
-            return ListEnd;
+        } else {
+            if first {
+                self.stack.push_index(0);
+            }
+            let val = self.parse_value();
+            self.state = match val {
+                Error(_) => ParseFinished,
+                ArrayStart => ParseArray(true),
+                ObjectStart => ParseObject(true),
+                _ => ParseArrayComma,
+            };
+            val
         }
-        if first {
-            self.stack.push_index(0);
-        }
-
-        let val = self.parse_value();
-
-        self.state = match val {
-            Error(_) => { ParseFinished }
-            ListStart => { ParseList(true) }
-            ObjectStart => { ParseObject(true) }
-            _ => { ParseListComma }
-        };
-        return val;
     }
 
-    fn parse_list_comma_or_end(&mut self) -> Option<JsonEvent> {
+    fn parse_array_comma_or_end(&mut self) -> Option<JsonEvent> {
         if self.ch_is(',') {
             self.stack.bump_index();
-            self.state = ParseList(false);
+            self.state = ParseArray(false);
             self.bump();
-            return None;
+            None
         } else if self.ch_is(']') {
             self.stack.pop();
-            if self.stack.is_empty() {
-                self.state = ParseBeforeFinish;
+            self.state = if self.stack.is_empty() {
+                ParseBeforeFinish
+            } else if self.stack.last_is_index() {
+                ParseArrayComma
             } else {
-                self.state = if self.stack.last_is_index() {
-                    ParseListComma
-                } else {
-                    ParseObjectComma
-                }
-            }
+                ParseObjectComma
+            };
             self.bump();
-            return Some(ListEnd);
+            Some(ArrayEnd)
         } else if self.eof() {
-            return Some(self.error_event(EOFWhileParsingList));
+            Some(self.error_event(EOFWhileParsingArray))
         } else {
-            return Some(self.error_event(InvalidSyntax));
+            Some(self.error_event(InvalidSyntax))
         }
     }
 
     fn parse_object(&mut self, first: bool) -> JsonEvent {
         if self.ch_is('}') {
             if !first {
-                self.stack.pop();
-            }
-            if self.stack.is_empty() {
-                self.state = ParseBeforeFinish;
-            } else {
-                self.state = if self.stack.last_is_index() {
-                    ParseListComma
+                if self.stack.is_empty() {
+                    return self.error_event(TrailingComma);
                 } else {
-                    ParseObjectComma
+                    self.stack.pop();
                 }
             }
+            self.state = if self.stack.is_empty() {
+                ParseBeforeFinish
+            } else if self.stack.last_is_index() {
+                ParseArrayComma
+            } else {
+                ParseObjectComma
+            };
             self.bump();
             return ObjectEnd;
         }
@@ -1702,7 +1882,7 @@ impl<T: Iterator<char>> Parser<T> {
             return self.error_event(KeyMustBeAString);
         }
         let s = match self.parse_str() {
-            Ok(s) => { s }
+            Ok(s) => s,
             Err(e) => {
                 self.state = ParseFinished;
                 return Error(e);
@@ -1721,25 +1901,23 @@ impl<T: Iterator<char>> Parser<T> {
         let val = self.parse_value();
 
         self.state = match val {
-            Error(_) => { ParseFinished }
-            ListStart => { ParseList(true) }
-            ObjectStart => { ParseObject(true) }
-            _ => { ParseObjectComma }
+            Error(_) => ParseFinished,
+            ArrayStart => ParseArray(true),
+            ObjectStart => ParseObject(true),
+            _ => ParseObjectComma,
         };
         return val;
     }
 
     fn parse_object_end(&mut self) -> JsonEvent {
         if self.ch_is('}') {
-            if self.stack.is_empty() {
-                self.state = ParseBeforeFinish;
+            self.state = if self.stack.is_empty() {
+                ParseBeforeFinish
+            } else if self.stack.last_is_index() {
+                ParseArrayComma
             } else {
-                self.state = if self.stack.last_is_index() {
-                    ParseListComma
-                } else {
-                    ParseObjectComma
-                }
-            }
+                ParseObjectComma
+            };
             self.bump();
             ObjectEnd
         } else if self.eof() {
@@ -1755,14 +1933,14 @@ impl<T: Iterator<char>> Parser<T> {
             'n' => { self.parse_ident("ull", NullValue) }
             't' => { self.parse_ident("rue", BooleanValue(true)) }
             'f' => { self.parse_ident("alse", BooleanValue(false)) }
-            '0' .. '9' | '-' => self.parse_number(),
+            '0' ... '9' | '-' => self.parse_number(),
             '"' => match self.parse_str() {
                 Ok(s) => StringValue(s),
                 Err(e) => Error(e),
             },
             '[' => {
                 self.bump();
-                ListStart
+                ArrayStart
             }
             '{' => {
                 self.bump();
@@ -1793,7 +1971,7 @@ pub struct Builder<T> {
     token: Option<JsonEvent>,
 }
 
-impl<T: Iterator<char>> Builder<T> {
+impl<T: Iterator<Item=char>> Builder<T> {
     /// Create a JSON Builder.
     pub fn new(src: T) -> Builder<T> {
         Builder { parser: Parser::new(src), token: None, }
@@ -1806,8 +1984,8 @@ impl<T: Iterator<char>> Builder<T> {
         self.bump();
         match self.token {
             None => {}
-            Some(Error(e)) => { return Err(e); }
-            ref tok => { fail!("unexpected token {}", tok.clone()); }
+            Some(Error(ref e)) => { return Err(e.clone()); }
+            ref tok => { panic!("unexpected token {:?}", tok.clone()); }
         }
         result
     }
@@ -1818,32 +1996,32 @@ impl<T: Iterator<char>> Builder<T> {
 
     fn build_value(&mut self) -> Result<Json, BuilderError> {
         return match self.token {
-            Some(NullValue) => { Ok(Null) }
-            Some(I64Value(n)) => { Ok(I64(n)) }
-            Some(U64Value(n)) => { Ok(U64(n)) }
-            Some(F64Value(n)) => { Ok(F64(n)) }
-            Some(BooleanValue(b)) => { Ok(Boolean(b)) }
+            Some(NullValue) => Ok(Json::Null),
+            Some(I64Value(n)) => Ok(Json::I64(n)),
+            Some(U64Value(n)) => Ok(Json::U64(n)),
+            Some(F64Value(n)) => Ok(Json::F64(n)),
+            Some(BooleanValue(b)) => Ok(Json::Boolean(b)),
             Some(StringValue(ref mut s)) => {
-                let mut temp = String::new();
+                let mut temp = string::String::new();
                 swap(s, &mut temp);
-                Ok(String(temp))
+                Ok(Json::String(temp))
             }
-            Some(Error(e)) => { Err(e) }
-            Some(ListStart) => { self.build_list() }
-            Some(ObjectStart) => { self.build_object() }
-            Some(ObjectEnd) => { self.parser.error(InvalidSyntax) }
-            Some(ListEnd) => { self.parser.error(InvalidSyntax) }
-            None => { self.parser.error(EOFWhileParsingValue) }
+            Some(Error(ref e)) => Err(e.clone()),
+            Some(ArrayStart) => self.build_array(),
+            Some(ObjectStart) => self.build_object(),
+            Some(ObjectEnd) => self.parser.error(InvalidSyntax),
+            Some(ArrayEnd) => self.parser.error(InvalidSyntax),
+            None => self.parser.error(EOFWhileParsingValue),
         }
     }
 
-    fn build_list(&mut self) -> Result<Json, BuilderError> {
+    fn build_array(&mut self) -> Result<Json, BuilderError> {
         self.bump();
         let mut values = Vec::new();
 
         loop {
-            if self.token == Some(ListEnd) {
-                return Ok(List(values.move_iter().collect()));
+            if self.token == Some(ArrayEnd) {
+                return Ok(Json::Array(values.into_iter().collect()));
             }
             match self.build_value() {
                 Ok(v) => values.push(v),
@@ -1856,18 +2034,18 @@ impl<T: Iterator<char>> Builder<T> {
     fn build_object(&mut self) -> Result<Json, BuilderError> {
         self.bump();
 
-        let mut values = TreeMap::new();
+        let mut values = BTreeMap::new();
 
         loop {
             match self.token {
-                Some(ObjectEnd) => { return Ok(Object(values)); }
-                Some(Error(e)) => { return Err(e); }
+                Some(ObjectEnd) => { return Ok(Json::Object(values)); }
+                Some(Error(ref e)) => { return Err(e.clone()); }
                 None => { break; }
                 _ => {}
             }
             let key = match self.parser.stack().top() {
-                Some(Key(k)) => { k.to_string() }
-                _ => { fail!("invalid state"); }
+                Some(StackElement::Key(k)) => { k.to_string() }
+                _ => { panic!("invalid state"); }
             };
             match self.build_value() {
                 Ok(value) => { values.insert(key, value); }
@@ -1879,13 +2057,14 @@ impl<T: Iterator<char>> Builder<T> {
     }
 }
 
-/// Decodes a json value from an `&mut io::Reader`
-pub fn from_reader(rdr: &mut io::Reader) -> Result<Json, BuilderError> {
-    let contents = match rdr.read_to_end() {
+/// Decodes a json value from an `&mut io::Read`
+pub fn from_reader(rdr: &mut Read) -> Result<Json, BuilderError> {
+    let mut contents = Vec::new();
+    match rdr.read_to_end(&mut contents) {
         Ok(c)  => c,
         Err(e) => return Err(io_error_to_error(e))
     };
-    let s = match str::from_utf8(contents.as_slice()) {
+    let s = match str::from_utf8(&contents).ok() {
         Some(s) => s,
         _       => return Err(SyntaxError(NotUtf8, 0, 0))
     };
@@ -1917,108 +2096,90 @@ impl Decoder {
     }
 }
 
-macro_rules! expect(
+macro_rules! expect {
     ($e:expr, Null) => ({
         match $e {
-            Null => Ok(()),
+            Json::Null => Ok(()),
             other => Err(ExpectedError("Null".to_string(),
                                        format!("{}", other)))
         }
     });
     ($e:expr, $t:ident) => ({
         match $e {
-            $t(v) => Ok(v),
+            Json::$t(v) => Ok(v),
             other => {
                 Err(ExpectedError(stringify!($t).to_string(),
                                   format!("{}", other)))
             }
         }
     })
-)
+}
 
 macro_rules! read_primitive {
     ($name:ident, $ty:ty) => {
         fn $name(&mut self) -> DecodeResult<$ty> {
             match self.pop() {
-                I64(f) => {
-                    match num::cast(f) {
-                        Some(f) => Ok(f),
-                        None => Err(ExpectedError("Number".to_string(), format!("{}", f))),
-                    }
-                }
-                U64(f) => {
-                    match num::cast(f) {
-                        Some(f) => Ok(f),
-                        None => Err(ExpectedError("Number".to_string(), format!("{}", f))),
-                    }
-                }
-                F64(f) => {
-                    match num::cast(f) {
-                        Some(f) => Ok(f),
-                        None => Err(ExpectedError("Number".to_string(), format!("{}", f))),
-                    }
-                }
-                String(s) => {
-                    // re: #12967.. a type w/ numeric keys (ie HashMap<uint, V> etc)
-                    // is going to have a string here, as per JSON spec.
-                    match std::from_str::from_str(s.as_slice()) {
-                        Some(f) => Ok(f),
-                        None => Err(ExpectedError("Number".to_string(), s)),
-                    }
+                Json::I64(f) => Ok(f as $ty),
+                Json::U64(f) => Ok(f as $ty),
+                Json::F64(f) => Err(ExpectedError("Integer".to_string(), format!("{}", f))),
+                // re: #12967.. a type w/ numeric keys (ie HashMap<usize, V> etc)
+                // is going to have a string here, as per JSON spec.
+                Json::String(s) => match s.parse().ok() {
+                    Some(f) => Ok(f),
+                    None => Err(ExpectedError("Number".to_string(), s)),
                 },
-                value => Err(ExpectedError("Number".to_string(), format!("{}", value)))
+                value => Err(ExpectedError("Number".to_string(), format!("{}", value))),
             }
         }
     }
 }
 
-impl ::Decoder<DecoderError> for Decoder {
+impl ::Decoder for Decoder {
+    type Error = DecoderError;
+
     fn read_nil(&mut self) -> DecodeResult<()> {
-        debug!("read_nil");
         expect!(self.pop(), Null)
     }
 
-    read_primitive!(read_uint, uint)
-    read_primitive!(read_u8, u8)
-    read_primitive!(read_u16, u16)
-    read_primitive!(read_u32, u32)
-    read_primitive!(read_u64, u64)
-    read_primitive!(read_int, int)
-    read_primitive!(read_i8, i8)
-    read_primitive!(read_i16, i16)
-    read_primitive!(read_i32, i32)
-    read_primitive!(read_i64, i64)
+    read_primitive! { read_uint, usize }
+    read_primitive! { read_u8, u8 }
+    read_primitive! { read_u16, u16 }
+    read_primitive! { read_u32, u32 }
+    read_primitive! { read_u64, u64 }
+    read_primitive! { read_int, isize }
+    read_primitive! { read_i8, i8 }
+    read_primitive! { read_i16, i16 }
+    read_primitive! { read_i32, i32 }
+    read_primitive! { read_i64, i64 }
 
     fn read_f32(&mut self) -> DecodeResult<f32> { self.read_f64().map(|x| x as f32) }
 
     fn read_f64(&mut self) -> DecodeResult<f64> {
-        debug!("read_f64");
         match self.pop() {
-            I64(f) => Ok(f as f64),
-            U64(f) => Ok(f as f64),
-            F64(f) => Ok(f),
-            String(s) => {
-                // re: #12967.. a type w/ numeric keys (ie HashMap<uint, V> etc)
+            Json::I64(f) => Ok(f as f64),
+            Json::U64(f) => Ok(f as f64),
+            Json::F64(f) => Ok(f),
+            Json::String(s) => {
+                // re: #12967.. a type w/ numeric keys (ie HashMap<usize, V> etc)
                 // is going to have a string here, as per JSON spec.
-                match std::from_str::from_str(s.as_slice()) {
+                match s.parse().ok() {
                     Some(f) => Ok(f),
                     None => Err(ExpectedError("Number".to_string(), s)),
                 }
             },
-            Null => Ok(f64::NAN),
+            Json::Null => Ok(f64::NAN),
             value => Err(ExpectedError("Number".to_string(), format!("{}", value)))
         }
     }
 
     fn read_bool(&mut self) -> DecodeResult<bool> {
-        debug!("read_bool");
         expect!(self.pop(), Boolean)
     }
 
     fn read_char(&mut self) -> DecodeResult<char> {
         let s = try!(self.read_str());
         {
-            let mut it = s.as_slice().chars();
+            let mut it = s.chars();
             match (it.next(), it.next()) {
                 // exactly one character
                 (Some(c), None) => return Ok(c),
@@ -2028,28 +2189,25 @@ impl ::Decoder<DecoderError> for Decoder {
         Err(ExpectedError("single character string".to_string(), format!("{}", s)))
     }
 
-    fn read_str(&mut self) -> DecodeResult<String> {
-        debug!("read_str");
+    fn read_str(&mut self) -> DecodeResult<string::String> {
         expect!(self.pop(), String)
     }
 
-    fn read_enum<T>(&mut self,
-                    name: &str,
-                    f: |&mut Decoder| -> DecodeResult<T>) -> DecodeResult<T> {
-        debug!("read_enum({})", name);
+    fn read_enum<T, F>(&mut self, _name: &str, f: F) -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
         f(self)
     }
 
-    fn read_enum_variant<T>(&mut self,
-                            names: &[&str],
-                            f: |&mut Decoder, uint| -> DecodeResult<T>)
-                            -> DecodeResult<T> {
-        debug!("read_enum_variant(names={})", names);
+    fn read_enum_variant<T, F>(&mut self, names: &[&str],
+                               mut f: F) -> DecodeResult<T>
+        where F: FnMut(&mut Decoder, usize) -> DecodeResult<T>,
+    {
         let name = match self.pop() {
-            String(s) => s,
-            Object(mut o) => {
-                let n = match o.pop(&"variant".to_string()) {
-                    Some(String(s)) => s,
+            Json::String(s) => s,
+            Json::Object(mut o) => {
+                let n = match o.remove(&"variant".to_string()) {
+                    Some(Json::String(s)) => s,
                     Some(val) => {
                         return Err(ExpectedError("String".to_string(), format!("{}", val)))
                     }
@@ -2057,14 +2215,14 @@ impl ::Decoder<DecoderError> for Decoder {
                         return Err(MissingFieldError("variant".to_string()))
                     }
                 };
-                match o.pop(&"fields".to_string()) {
-                    Some(List(l)) => {
-                        for field in l.move_iter().rev() {
+                match o.remove(&"fields".to_string()) {
+                    Some(Json::Array(l)) => {
+                        for field in l.into_iter().rev() {
                             self.stack.push(field);
                         }
                     },
                     Some(val) => {
-                        return Err(ExpectedError("List".to_string(), format!("{}", val)))
+                        return Err(ExpectedError("Array".to_string(), format!("{}", val)))
                     }
                     None => {
                         return Err(MissingFieldError("fields".to_string()))
@@ -2076,140 +2234,156 @@ impl ::Decoder<DecoderError> for Decoder {
                 return Err(ExpectedError("String or Object".to_string(), format!("{}", json)))
             }
         };
-        let idx = match names.iter()
-                             .position(|n| str::eq_slice(*n, name.as_slice())) {
+        let idx = match names.iter().position(|n| *n == &name[..]) {
             Some(idx) => idx,
             None => return Err(UnknownVariantError(name))
         };
         f(self, idx)
     }
 
-    fn read_enum_variant_arg<T>(&mut self, idx: uint, f: |&mut Decoder| -> DecodeResult<T>)
-                                -> DecodeResult<T> {
-        debug!("read_enum_variant_arg(idx={})", idx);
+    fn read_enum_variant_arg<T, F>(&mut self, _idx: usize, f: F) -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
         f(self)
     }
 
-    fn read_enum_struct_variant<T>(&mut self,
-                                   names: &[&str],
-                                   f: |&mut Decoder, uint| -> DecodeResult<T>)
-                                   -> DecodeResult<T> {
-        debug!("read_enum_struct_variant(names={})", names);
+    fn read_enum_struct_variant<T, F>(&mut self, names: &[&str], f: F) -> DecodeResult<T> where
+        F: FnMut(&mut Decoder, usize) -> DecodeResult<T>,
+    {
         self.read_enum_variant(names, f)
     }
 
 
-    fn read_enum_struct_variant_field<T>(&mut self,
-                                         name: &str,
-                                         idx: uint,
-                                         f: |&mut Decoder| -> DecodeResult<T>)
-                                         -> DecodeResult<T> {
-        debug!("read_enum_struct_variant_field(name={}, idx={})", name, idx);
+    fn read_enum_struct_variant_field<T, F>(&mut self,
+                                         _name: &str,
+                                         idx: usize,
+                                         f: F)
+                                         -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
         self.read_enum_variant_arg(idx, f)
     }
 
-    fn read_struct<T>(&mut self,
-                      name: &str,
-                      len: uint,
-                      f: |&mut Decoder| -> DecodeResult<T>)
-                      -> DecodeResult<T> {
-        debug!("read_struct(name={}, len={})", name, len);
+    fn read_struct<T, F>(&mut self, _name: &str, _len: usize, f: F) -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
         let value = try!(f(self));
         self.pop();
         Ok(value)
     }
 
-    fn read_struct_field<T>(&mut self,
-                            name: &str,
-                            idx: uint,
-                            f: |&mut Decoder| -> DecodeResult<T>)
-                            -> DecodeResult<T> {
-        debug!("read_struct_field(name={}, idx={})", name, idx);
+    fn read_struct_field<T, F>(&mut self,
+                               name: &str,
+                               _idx: usize,
+                               f: F)
+                               -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
         let mut obj = try!(expect!(self.pop(), Object));
 
-        let value = match obj.pop(&name.to_string()) {
-            None => return Err(MissingFieldError(name.to_string())),
+        let value = match obj.remove(&name.to_string()) {
+            None => {
+                // Add a Null and try to parse it as an Option<_>
+                // to get None as a default value.
+                self.stack.push(Json::Null);
+                match f(self) {
+                    Ok(x) => x,
+                    Err(_) => return Err(MissingFieldError(name.to_string())),
+                }
+            },
             Some(json) => {
                 self.stack.push(json);
                 try!(f(self))
             }
         };
-        self.stack.push(Object(obj));
+        self.stack.push(Json::Object(obj));
         Ok(value)
     }
 
-    fn read_tuple<T>(&mut self, f: |&mut Decoder, uint| -> DecodeResult<T>) -> DecodeResult<T> {
-        debug!("read_tuple()");
-        self.read_seq(f)
+    fn read_tuple<T, F>(&mut self, tuple_len: usize, f: F) -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
+        self.read_seq(move |d, len| {
+            if len == tuple_len {
+                f(d)
+            } else {
+                Err(ExpectedError(format!("Tuple{}", tuple_len), format!("Tuple{}", len)))
+            }
+        })
     }
 
-    fn read_tuple_arg<T>(&mut self,
-                         idx: uint,
-                         f: |&mut Decoder| -> DecodeResult<T>) -> DecodeResult<T> {
-        debug!("read_tuple_arg(idx={})", idx);
+    fn read_tuple_arg<T, F>(&mut self, idx: usize, f: F) -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
         self.read_seq_elt(idx, f)
     }
 
-    fn read_tuple_struct<T>(&mut self,
-                            name: &str,
-                            f: |&mut Decoder, uint| -> DecodeResult<T>)
-                            -> DecodeResult<T> {
-        debug!("read_tuple_struct(name={})", name);
-        self.read_tuple(f)
+    fn read_tuple_struct<T, F>(&mut self,
+                               _name: &str,
+                               len: usize,
+                               f: F)
+                               -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
+        self.read_tuple(len, f)
     }
 
-    fn read_tuple_struct_arg<T>(&mut self,
-                                idx: uint,
-                                f: |&mut Decoder| -> DecodeResult<T>)
-                                -> DecodeResult<T> {
-        debug!("read_tuple_struct_arg(idx={})", idx);
+    fn read_tuple_struct_arg<T, F>(&mut self,
+                                   idx: usize,
+                                   f: F)
+                                   -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
         self.read_tuple_arg(idx, f)
     }
 
-    fn read_option<T>(&mut self, f: |&mut Decoder, bool| -> DecodeResult<T>) -> DecodeResult<T> {
+    fn read_option<T, F>(&mut self, mut f: F) -> DecodeResult<T> where
+        F: FnMut(&mut Decoder, bool) -> DecodeResult<T>,
+    {
         match self.pop() {
-            Null => f(self, false),
+            Json::Null => f(self, false),
             value => { self.stack.push(value); f(self, true) }
         }
     }
 
-    fn read_seq<T>(&mut self, f: |&mut Decoder, uint| -> DecodeResult<T>) -> DecodeResult<T> {
-        debug!("read_seq()");
-        let list = try!(expect!(self.pop(), List));
-        let len = list.len();
-        for v in list.move_iter().rev() {
+    fn read_seq<T, F>(&mut self, f: F) -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder, usize) -> DecodeResult<T>,
+    {
+        let array = try!(expect!(self.pop(), Array));
+        let len = array.len();
+        for v in array.into_iter().rev() {
             self.stack.push(v);
         }
         f(self, len)
     }
 
-    fn read_seq_elt<T>(&mut self,
-                       idx: uint,
-                       f: |&mut Decoder| -> DecodeResult<T>) -> DecodeResult<T> {
-        debug!("read_seq_elt(idx={})", idx);
+    fn read_seq_elt<T, F>(&mut self, _idx: usize, f: F) -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
         f(self)
     }
 
-    fn read_map<T>(&mut self, f: |&mut Decoder, uint| -> DecodeResult<T>) -> DecodeResult<T> {
-        debug!("read_map()");
+    fn read_map<T, F>(&mut self, f: F) -> DecodeResult<T> where
+        F: FnOnce(&mut Decoder, usize) -> DecodeResult<T>,
+    {
         let obj = try!(expect!(self.pop(), Object));
         let len = obj.len();
-        for (key, value) in obj.move_iter() {
+        for (key, value) in obj {
             self.stack.push(value);
-            self.stack.push(String(key));
+            self.stack.push(Json::String(key));
         }
         f(self, len)
     }
 
-    fn read_map_elt_key<T>(&mut self, idx: uint, f: |&mut Decoder| -> DecodeResult<T>)
-                           -> DecodeResult<T> {
-        debug!("read_map_elt_key(idx={})", idx);
+    fn read_map_elt_key<T, F>(&mut self, _idx: usize, f: F) -> DecodeResult<T> where
+       F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
         f(self)
     }
 
-    fn read_map_elt_val<T>(&mut self, idx: uint, f: |&mut Decoder| -> DecodeResult<T>)
-                           -> DecodeResult<T> {
-        debug!("read_map_elt_val(idx={})", idx);
+    fn read_map_elt_val<T, F>(&mut self, _idx: usize, f: F) -> DecodeResult<T> where
+       F: FnOnce(&mut Decoder) -> DecodeResult<T>,
+    {
         f(self)
     }
 
@@ -2224,25 +2398,29 @@ pub trait ToJson {
     fn to_json(&self) -> Json;
 }
 
-macro_rules! to_json_impl_i64(
+macro_rules! to_json_impl_i64 {
     ($($t:ty), +) => (
         $(impl ToJson for $t {
-            fn to_json(&self) -> Json { I64(*self as i64) }
+            fn to_json(&self) -> Json {
+                Json::I64(*self as i64)
+            }
         })+
     )
-)
+}
 
-to_json_impl_i64!(int, i8, i16, i32, i64)
+to_json_impl_i64! { isize, i8, i16, i32, i64 }
 
-macro_rules! to_json_impl_u64(
+macro_rules! to_json_impl_u64 {
     ($($t:ty), +) => (
         $(impl ToJson for $t {
-            fn to_json(&self) -> Json { U64(*self as u64) }
+            fn to_json(&self) -> Json {
+                Json::U64(*self as u64)
+            }
         })+
     )
-)
+}
 
-to_json_impl_u64!(uint, u8, u16, u32, u64)
+to_json_impl_u64! { usize, u8, u16, u32, u64 }
 
 impl ToJson for Json {
     fn to_json(&self) -> Json { self.clone() }
@@ -2255,22 +2433,26 @@ impl ToJson for f32 {
 impl ToJson for f64 {
     fn to_json(&self) -> Json {
         match self.classify() {
-            FPNaN | FPInfinite => Null,
-            _                  => F64(*self)
+            Fp::Nan | Fp::Infinite => Json::Null,
+            _                  => Json::F64(*self)
         }
     }
 }
 
 impl ToJson for () {
-    fn to_json(&self) -> Json { Null }
+    fn to_json(&self) -> Json { Json::Null }
 }
 
 impl ToJson for bool {
-    fn to_json(&self) -> Json { Boolean(*self) }
+    fn to_json(&self) -> Json { Json::Boolean(*self) }
 }
 
-impl ToJson for String {
-    fn to_json(&self) -> Json { String((*self).clone()) }
+impl ToJson for str {
+    fn to_json(&self) -> Json { Json::String(self.to_string()) }
+}
+
+impl ToJson for string::String {
+    fn to_json(&self) -> Json { Json::String((*self).clone()) }
 }
 
 macro_rules! tuple_impl {
@@ -2285,7 +2467,7 @@ macro_rules! tuple_impl {
             #[allow(non_snake_case)]
             fn to_json(&self) -> Json {
                 match *self {
-                    ($(ref $tyvar),*,) => List(vec![$($tyvar.to_json()),*])
+                    ($(ref $tyvar),*,) => Json::Array(vec![$($tyvar.to_json()),*])
                 }
             }
         }
@@ -2305,95 +2487,191 @@ tuple_impl!{A, B, C, D, E, F, G, H, I, J}
 tuple_impl!{A, B, C, D, E, F, G, H, I, J, K}
 tuple_impl!{A, B, C, D, E, F, G, H, I, J, K, L}
 
-impl<'a, A: ToJson> ToJson for &'a [A] {
-    fn to_json(&self) -> Json { List(self.iter().map(|elt| elt.to_json()).collect()) }
+impl<A: ToJson> ToJson for [A] {
+    fn to_json(&self) -> Json { Json::Array(self.iter().map(|elt| elt.to_json()).collect()) }
 }
 
 impl<A: ToJson> ToJson for Vec<A> {
-    fn to_json(&self) -> Json { List(self.iter().map(|elt| elt.to_json()).collect()) }
+    fn to_json(&self) -> Json { Json::Array(self.iter().map(|elt| elt.to_json()).collect()) }
 }
 
-impl<A: ToJson> ToJson for TreeMap<String, A> {
+impl<A: ToJson> ToJson for BTreeMap<string::String, A> {
     fn to_json(&self) -> Json {
-        let mut d = TreeMap::new();
-        for (key, value) in self.iter() {
+        let mut d = BTreeMap::new();
+        for (key, value) in self {
             d.insert((*key).clone(), value.to_json());
         }
-        Object(d)
+        Json::Object(d)
     }
 }
 
-impl<A: ToJson> ToJson for HashMap<String, A> {
+impl<A: ToJson> ToJson for HashMap<string::String, A> {
     fn to_json(&self) -> Json {
-        let mut d = TreeMap::new();
-        for (key, value) in self.iter() {
+        let mut d = BTreeMap::new();
+        for (key, value) in self {
             d.insert((*key).clone(), value.to_json());
         }
-        Object(d)
+        Json::Object(d)
     }
 }
 
 impl<A:ToJson> ToJson for Option<A> {
     fn to_json(&self) -> Json {
         match *self {
-            None => Null,
+            None => Json::Null,
             Some(ref value) => value.to_json()
         }
     }
 }
 
-impl fmt::Show for Json {
-    /// Encodes a json value into a string
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.to_writer(f).map_err(|_| fmt::WriteError)
+struct FormatShim<'a, 'b: 'a> {
+    inner: &'a mut fmt::Formatter<'b>,
+}
+
+impl<'a, 'b> fmt::Write for FormatShim<'a, 'b> {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        match self.inner.write_str(s) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(fmt::Error)
+        }
     }
 }
 
-impl std::from_str::FromStr for Json {
-    fn from_str(s: &str) -> Option<Json> {
-        from_str(s).ok()
+impl fmt::Display for Json {
+    /// Encodes a json value into a string
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut shim = FormatShim { inner: f };
+        let mut encoder = Encoder::new(&mut shim);
+        match self.encode(&mut encoder) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(fmt::Error)
+        }
+    }
+}
+
+impl<'a> fmt::Display for PrettyJson<'a> {
+    /// Encodes a json value into a string
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut shim = FormatShim { inner: f };
+        let mut encoder = PrettyEncoder::new(&mut shim);
+        match self.inner.encode(&mut encoder) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(fmt::Error)
+        }
+    }
+}
+
+impl<'a, T: Encodable> fmt::Display for AsJson<'a, T> {
+    /// Encodes a json value into a string
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut shim = FormatShim { inner: f };
+        let mut encoder = Encoder::new(&mut shim);
+        match self.inner.encode(&mut encoder) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(fmt::Error)
+        }
+    }
+}
+
+impl<'a, T> AsPrettyJson<'a, T> {
+    /// Set the indentation level for the emitted JSON
+    pub fn indent(mut self, indent: usize) -> AsPrettyJson<'a, T> {
+        self.indent = Some(indent);
+        self
+    }
+}
+
+impl<'a, T: Encodable> fmt::Display for AsPrettyJson<'a, T> {
+    /// Encodes a json value into a string
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut shim = FormatShim { inner: f };
+        let mut encoder = PrettyEncoder::new(&mut shim);
+        match self.indent {
+            Some(n) => encoder.set_indent(n),
+            None => {}
+        }
+        match self.inner.encode(&mut encoder) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(fmt::Error)
+        }
+    }
+}
+
+impl FromStr for Json {
+    type Err = BuilderError;
+    fn from_str(s: &str) -> Result<Json, BuilderError> {
+        from_str(s)
     }
 }
 
 #[cfg(test)]
 mod tests {
     extern crate test;
+    use self::Animal::*;
+    use self::DecodeEnum::*;
     use self::test::Bencher;
     use {Encodable, Decodable};
-    use super::{Encoder, Decoder, Error, Boolean, I64, U64, F64, List, String, Null,
-                PrettyEncoder, Object, Json, from_str, ParseError, ExpectedError,
-                MissingFieldError, UnknownVariantError, DecodeResult, DecoderError,
-                JsonEvent, Parser, StackElement,
-                ObjectStart, ObjectEnd, ListStart, ListEnd, BooleanValue, U64Value,
-                F64Value, StringValue, NullValue, SyntaxError, Key, Index, Stack,
-                InvalidSyntax, InvalidNumber, EOFWhileParsingObject, EOFWhileParsingList,
-                EOFWhileParsingValue, EOFWhileParsingString, KeyMustBeAString, ExpectedColon,
-                TrailingCharacters};
-    use std::{i64, u64, f32, f64, io};
-    use std::collections::TreeMap;
+    use super::Json::*;
+    use super::ErrorCode::*;
+    use super::ParserError::*;
+    use super::DecoderError::*;
+    use super::JsonEvent::*;
+    use super::{Json, from_str, DecodeResult, DecoderError, JsonEvent, Parser,
+                StackElement, Stack, Decoder, Encoder, EncoderError};
+    use std::{i64, u64, f32, f64};
+    use std::io::prelude::*;
+    use std::collections::BTreeMap;
+    use std::string;
 
-    #[deriving(PartialEq, Encodable, Decodable, Show)]
+    #[derive(RustcDecodable, Eq, PartialEq, Debug)]
+    struct OptionData {
+        opt: Option<usize>,
+    }
+
+    #[test]
+    fn test_decode_option_none() {
+        let s ="{}";
+        let obj: OptionData = super::decode(s).unwrap();
+        assert_eq!(obj, OptionData { opt: None });
+    }
+
+    #[test]
+    fn test_decode_option_some() {
+        let s = "{ \"opt\": 10 }";
+        let obj: OptionData = super::decode(s).unwrap();
+        assert_eq!(obj, OptionData { opt: Some(10) });
+    }
+
+    #[test]
+    fn test_decode_option_malformed() {
+        check_err::<OptionData>("{ \"opt\": [] }",
+                                ExpectedError("Number".to_string(), "[]".to_string()));
+        check_err::<OptionData>("{ \"opt\": false }",
+                                ExpectedError("Number".to_string(), "false".to_string()));
+    }
+
+    #[derive(PartialEq, RustcEncodable, RustcDecodable, Debug)]
     enum Animal {
         Dog,
-        Frog(String, int)
+        Frog(string::String, isize)
     }
 
-    #[deriving(PartialEq, Encodable, Decodable, Show)]
+    #[derive(PartialEq, RustcEncodable, RustcDecodable, Debug)]
     struct Inner {
         a: (),
-        b: uint,
-        c: Vec<String>,
+        b: usize,
+        c: Vec<string::String>,
     }
 
-    #[deriving(PartialEq, Encodable, Decodable, Show)]
+    #[derive(PartialEq, RustcEncodable, RustcDecodable, Debug)]
     struct Outer {
         inner: Vec<Inner>,
     }
 
-    fn mk_object(items: &[(String, Json)]) -> Json {
-        let mut d = TreeMap::new();
+    fn mk_object(items: &[(string::String, Json)]) -> Json {
+        let mut d = BTreeMap::new();
 
-        for item in items.iter() {
+        for item in items {
             match *item {
                 (ref key, ref value) => { d.insert((*key).clone(), (*value).clone()); },
             }
@@ -2405,92 +2683,95 @@ mod tests {
     #[test]
     fn test_from_str_trait() {
         let s = "null";
-        assert!(::std::from_str::from_str::<Json>(s).unwrap() == from_str(s).unwrap());
+        assert!(s.parse::<Json>().unwrap() == s.parse().unwrap());
     }
 
     #[test]
     fn test_write_null() {
-        assert_eq!(Null.to_string().into_string(), "null".to_string());
-        assert_eq!(Null.to_pretty_str().into_string(), "null".to_string());
+        assert_eq!(Null.to_string(), "null");
+        assert_eq!(Null.pretty().to_string(), "null");
     }
 
     #[test]
     fn test_write_i64() {
-        assert_eq!(U64(0).to_string().into_string(), "0".to_string());
-        assert_eq!(U64(0).to_pretty_str().into_string(), "0".to_string());
+        assert_eq!(U64(0).to_string(), "0");
+        assert_eq!(U64(0).pretty().to_string(), "0");
 
-        assert_eq!(U64(1234).to_string().into_string(), "1234".to_string());
-        assert_eq!(U64(1234).to_pretty_str().into_string(), "1234".to_string());
+        assert_eq!(U64(1234).to_string(), "1234");
+        assert_eq!(U64(1234).pretty().to_string(), "1234");
 
-        assert_eq!(I64(-5678).to_string().into_string(), "-5678".to_string());
-        assert_eq!(I64(-5678).to_pretty_str().into_string(), "-5678".to_string());
+        assert_eq!(I64(-5678).to_string(), "-5678");
+        assert_eq!(I64(-5678).pretty().to_string(), "-5678");
+
+        assert_eq!(U64(7650007200025252000).to_string(), "7650007200025252000");
+        assert_eq!(U64(7650007200025252000).pretty().to_string(), "7650007200025252000");
     }
 
     #[test]
     fn test_write_f64() {
-        assert_eq!(F64(3.0).to_string().into_string(), "3".to_string());
-        assert_eq!(F64(3.0).to_pretty_str().into_string(), "3".to_string());
+        assert_eq!(F64(3.0).to_string(), "3.0");
+        assert_eq!(F64(3.0).pretty().to_string(), "3.0");
 
-        assert_eq!(F64(3.1).to_string().into_string(), "3.1".to_string());
-        assert_eq!(F64(3.1).to_pretty_str().into_string(), "3.1".to_string());
+        assert_eq!(F64(3.1).to_string(), "3.1");
+        assert_eq!(F64(3.1).pretty().to_string(), "3.1");
 
-        assert_eq!(F64(-1.5).to_string().into_string(), "-1.5".to_string());
-        assert_eq!(F64(-1.5).to_pretty_str().into_string(), "-1.5".to_string());
+        assert_eq!(F64(-1.5).to_string(), "-1.5");
+        assert_eq!(F64(-1.5).pretty().to_string(), "-1.5");
 
-        assert_eq!(F64(0.5).to_string().into_string(), "0.5".to_string());
-        assert_eq!(F64(0.5).to_pretty_str().into_string(), "0.5".to_string());
+        assert_eq!(F64(0.5).to_string(), "0.5");
+        assert_eq!(F64(0.5).pretty().to_string(), "0.5");
 
-        assert_eq!(F64(f64::NAN).to_string().into_string(), "null".to_string());
-        assert_eq!(F64(f64::NAN).to_pretty_str().into_string(), "null".to_string());
+        assert_eq!(F64(f64::NAN).to_string(), "null");
+        assert_eq!(F64(f64::NAN).pretty().to_string(), "null");
 
-        assert_eq!(F64(f64::INFINITY).to_string().into_string(), "null".to_string());
-        assert_eq!(F64(f64::INFINITY).to_pretty_str().into_string(), "null".to_string());
+        assert_eq!(F64(f64::INFINITY).to_string(), "null");
+        assert_eq!(F64(f64::INFINITY).pretty().to_string(), "null");
 
-        assert_eq!(F64(f64::NEG_INFINITY).to_string().into_string(), "null".to_string());
-        assert_eq!(F64(f64::NEG_INFINITY).to_pretty_str().into_string(), "null".to_string());
+        assert_eq!(F64(f64::NEG_INFINITY).to_string(), "null");
+        assert_eq!(F64(f64::NEG_INFINITY).pretty().to_string(), "null");
     }
 
     #[test]
     fn test_write_str() {
-        assert_eq!(String("".to_string()).to_string().into_string(), "\"\"".to_string());
-        assert_eq!(String("".to_string()).to_pretty_str().into_string(), "\"\"".to_string());
+        assert_eq!(String("".to_string()).to_string(), "\"\"");
+        assert_eq!(String("".to_string()).pretty().to_string(), "\"\"");
 
-        assert_eq!(String("foo".to_string()).to_string().into_string(), "\"foo\"".to_string());
-        assert_eq!(String("foo".to_string()).to_pretty_str().into_string(), "\"foo\"".to_string());
+        assert_eq!(String("homura".to_string()).to_string(), "\"homura\"");
+        assert_eq!(String("madoka".to_string()).pretty().to_string(), "\"madoka\"");
     }
 
     #[test]
     fn test_write_bool() {
-        assert_eq!(Boolean(true).to_string().into_string(), "true".to_string());
-        assert_eq!(Boolean(true).to_pretty_str().into_string(), "true".to_string());
+        assert_eq!(Boolean(true).to_string(), "true");
+        assert_eq!(Boolean(true).pretty().to_string(), "true");
 
-        assert_eq!(Boolean(false).to_string().into_string(), "false".to_string());
-        assert_eq!(Boolean(false).to_pretty_str().into_string(), "false".to_string());
+        assert_eq!(Boolean(false).to_string(), "false");
+        assert_eq!(Boolean(false).pretty().to_string(), "false");
     }
 
     #[test]
-    fn test_write_list() {
-        assert_eq!(List(vec![]).to_string().into_string(), "[]".to_string());
-        assert_eq!(List(vec![]).to_pretty_str().into_string(), "[]".to_string());
+    fn test_write_array() {
+        assert_eq!(Array(vec![]).to_string(), "[]");
+        assert_eq!(Array(vec![]).pretty().to_string(), "[]");
 
-        assert_eq!(List(vec![Boolean(true)]).to_string().into_string(), "[true]".to_string());
+        assert_eq!(Array(vec![Boolean(true)]).to_string(), "[true]");
         assert_eq!(
-            List(vec![Boolean(true)]).to_pretty_str().into_string(),
+            Array(vec![Boolean(true)]).pretty().to_string(),
             "\
             [\n  \
                 true\n\
-            ]".to_string()
+            ]"
         );
 
-        let long_test_list = List(vec![
+        let long_test_array = Array(vec![
             Boolean(false),
             Null,
-            List(vec![String("foo\nbar".to_string()), F64(3.5)])]);
+            Array(vec![String("foo\nbar".to_string()), F64(3.5)])]);
 
-        assert_eq!(long_test_list.to_string().into_string(),
-            "[false,null,[\"foo\\nbar\",3.5]]".to_string());
+        assert_eq!(long_test_array.to_string(),
+            "[false,null,[\"foo\\nbar\",3.5]]");
         assert_eq!(
-            long_test_list.to_pretty_str().into_string(),
+            long_test_array.pretty().to_string(),
             "\
             [\n  \
                 false,\n  \
@@ -2499,47 +2780,47 @@ mod tests {
                     \"foo\\nbar\",\n    \
                     3.5\n  \
                 ]\n\
-            ]".to_string()
+            ]"
         );
     }
 
     #[test]
     fn test_write_object() {
-        assert_eq!(mk_object([]).to_string().into_string(), "{}".to_string());
-        assert_eq!(mk_object([]).to_pretty_str().into_string(), "{}".to_string());
+        assert_eq!(mk_object(&[]).to_string(), "{}");
+        assert_eq!(mk_object(&[]).pretty().to_string(), "{}");
 
         assert_eq!(
-            mk_object([
+            mk_object(&[
                 ("a".to_string(), Boolean(true))
-            ]).to_string().into_string(),
-            "{\"a\":true}".to_string()
+            ]).to_string(),
+            "{\"a\":true}"
         );
         assert_eq!(
-            mk_object([("a".to_string(), Boolean(true))]).to_pretty_str(),
+            mk_object(&[("a".to_string(), Boolean(true))]).pretty().to_string(),
             "\
             {\n  \
                 \"a\": true\n\
-            }".to_string()
+            }"
         );
 
-        let complex_obj = mk_object([
-                ("b".to_string(), List(vec![
-                    mk_object([("c".to_string(), String("\x0c\r".to_string()))]),
-                    mk_object([("d".to_string(), String("".to_string()))])
+        let complex_obj = mk_object(&[
+                ("b".to_string(), Array(vec![
+                    mk_object(&[("c".to_string(), String("\x0c\r".to_string()))]),
+                    mk_object(&[("d".to_string(), String("".to_string()))])
                 ]))
             ]);
 
         assert_eq!(
-            complex_obj.to_string().into_string(),
+            complex_obj.to_string(),
             "{\
                 \"b\":[\
                     {\"c\":\"\\f\\r\"},\
                     {\"d\":\"\"}\
                 ]\
-            }".to_string()
+            }"
         );
         assert_eq!(
-            complex_obj.to_pretty_str().into_string(),
+            complex_obj.pretty().to_string(),
             "\
             {\n  \
                 \"b\": [\n    \
@@ -2550,104 +2831,82 @@ mod tests {
                         \"d\": \"\"\n    \
                     }\n  \
                 ]\n\
-            }".to_string()
+            }"
         );
 
-        let a = mk_object([
+        let a = mk_object(&[
             ("a".to_string(), Boolean(true)),
-            ("b".to_string(), List(vec![
-                mk_object([("c".to_string(), String("\x0c\r".to_string()))]),
-                mk_object([("d".to_string(), String("".to_string()))])
+            ("b".to_string(), Array(vec![
+                mk_object(&[("c".to_string(), String("\x0c\r".to_string()))]),
+                mk_object(&[("d".to_string(), String("".to_string()))])
             ]))
         ]);
 
         // We can't compare the strings directly because the object fields be
         // printed in a different order.
-        assert_eq!(a.clone(), from_str(a.to_string().as_slice()).unwrap());
-        assert_eq!(a.clone(),
-                   from_str(a.to_pretty_str().as_slice()).unwrap());
-    }
-
-    fn with_str_writer(f: |&mut io::Writer|) -> String {
-        use std::io::MemWriter;
-        use std::str;
-
-        let mut m = MemWriter::new();
-        f(&mut m as &mut io::Writer);
-        str::from_utf8(m.unwrap().as_slice()).unwrap().to_string()
+        assert_eq!(a.clone(), a.to_string().parse().unwrap());
+        assert_eq!(a.clone(), a.pretty().to_string().parse().unwrap());
     }
 
     #[test]
     fn test_write_enum() {
         let animal = Dog;
         assert_eq!(
-            with_str_writer(|writer| {
-                let mut encoder = Encoder::new(writer);
-                animal.encode(&mut encoder).unwrap();
-            }),
-            "\"Dog\"".to_string()
+            format!("{}", super::as_json(&animal)),
+            "\"Dog\""
         );
         assert_eq!(
-            with_str_writer(|writer| {
-                let mut encoder = PrettyEncoder::new(writer);
-                animal.encode(&mut encoder).unwrap();
-            }),
-            "\"Dog\"".to_string()
+            format!("{}", super::as_pretty_json(&animal)),
+            "\"Dog\""
         );
 
         let animal = Frog("Henry".to_string(), 349);
         assert_eq!(
-            with_str_writer(|writer| {
-                let mut encoder = Encoder::new(writer);
-                animal.encode(&mut encoder).unwrap();
-            }),
-            "{\"variant\":\"Frog\",\"fields\":[\"Henry\",349]}".to_string()
+            format!("{}", super::as_json(&animal)),
+            "{\"variant\":\"Frog\",\"fields\":[\"Henry\",349]}"
         );
         assert_eq!(
-            with_str_writer(|writer| {
-                let mut encoder = PrettyEncoder::new(writer);
-                animal.encode(&mut encoder).unwrap();
-            }),
-            "\
-            [\n  \
-                \"Frog\",\n  \
-                \"Henry\",\n  \
-                349\n\
-            ]".to_string()
+            format!("{}", super::as_pretty_json(&animal)),
+            "{\n  \
+               \"variant\": \"Frog\",\n  \
+               \"fields\": [\n    \
+                 \"Henry\",\n    \
+                 349\n  \
+               ]\n\
+             }"
         );
+    }
+
+    macro_rules! check_encoder_for_simple {
+        ($value:expr, $expected:expr) => ({
+            let s = format!("{}", super::as_json(&$value));
+            assert_eq!(s, $expected);
+
+            let s = format!("{}", super::as_pretty_json(&$value));
+            assert_eq!(s, $expected);
+        })
     }
 
     #[test]
     fn test_write_some() {
-        let value = Some("jodhpurs".to_string());
-        let s = with_str_writer(|writer| {
-            let mut encoder = Encoder::new(writer);
-            value.encode(&mut encoder).unwrap();
-        });
-        assert_eq!(s, "\"jodhpurs\"".to_string());
-
-        let value = Some("jodhpurs".to_string());
-        let s = with_str_writer(|writer| {
-            let mut encoder = PrettyEncoder::new(writer);
-            value.encode(&mut encoder).unwrap();
-        });
-        assert_eq!(s, "\"jodhpurs\"".to_string());
+        check_encoder_for_simple!(Some("jodhpurs".to_string()), "\"jodhpurs\"");
     }
 
     #[test]
     fn test_write_none() {
-        let value: Option<String> = None;
-        let s = with_str_writer(|writer| {
-            let mut encoder = Encoder::new(writer);
-            value.encode(&mut encoder).unwrap();
-        });
-        assert_eq!(s, "null".to_string());
+        check_encoder_for_simple!(None::<string::String>, "null");
+    }
 
-        let s = with_str_writer(|writer| {
-            let mut encoder = Encoder::new(writer);
-            value.encode(&mut encoder).unwrap();
-        });
-        assert_eq!(s, "null".to_string());
+    #[test]
+    fn test_write_char() {
+        check_encoder_for_simple!('a', "\"a\"");
+        check_encoder_for_simple!('\t', "\"\\t\"");
+        check_encoder_for_simple!('\u{0000}', "\"\\u0000\"");
+        check_encoder_for_simple!('\u{001b}', "\"\\u001b\"");
+        check_encoder_for_simple!('\u{007f}', "\"\\u007f\"");
+        check_encoder_for_simple!('\u{00a0}', "\"\u{00a0}\"");
+        check_encoder_for_simple!('\u{abcd}', "\"\u{abcd}\"");
+        check_encoder_for_simple!('\u{10ffff}', "\"\u{10ffff}\"");
     }
 
     #[test]
@@ -2751,6 +3010,10 @@ mod tests {
 
         let v: i64 = super::decode("9223372036854775807").unwrap();
         assert_eq!(v, i64::MAX);
+
+        let res: DecodeResult<i64> = super::decode("765.25");
+        assert_eq!(res, Err(ExpectedError("Integer".to_string(),
+                                          "765.25".to_string())));
     }
 
     #[test]
@@ -2766,8 +3029,8 @@ mod tests {
         assert_eq!(from_str("\"\\r\""), Ok(String("\r".to_string())));
         assert_eq!(from_str("\"\\t\""), Ok(String("\t".to_string())));
         assert_eq!(from_str(" \"foo\" "), Ok(String("foo".to_string())));
-        assert_eq!(from_str("\"\\u12ab\""), Ok(String("\u12ab".to_string())));
-        assert_eq!(from_str("\"\\uAB12\""), Ok(String("\uAB12".to_string())));
+        assert_eq!(from_str("\"\\u12ab\""), Ok(String("\u{12ab}".to_string())));
+        assert_eq!(from_str("\"\\uAB12\""), Ok(String("\u{AB12}".to_string())));
     }
 
     #[test]
@@ -2779,52 +3042,71 @@ mod tests {
                  ("\"\\n\"", "\n"),
                  ("\"\\r\"", "\r"),
                  ("\"\\t\"", "\t"),
-                 ("\"\\u12ab\"", "\u12ab"),
-                 ("\"\\uAB12\"", "\uAB12")];
+                 ("\"\\u12ab\"", "\u{12ab}"),
+                 ("\"\\uAB12\"", "\u{AB12}")];
 
-        for &(i, o) in s.iter() {
-            let v: String = super::decode(i).unwrap();
-            assert_eq!(v.as_slice(), o);
+        for &(i, o) in &s {
+            let v: string::String = super::decode(i).unwrap();
+            assert_eq!(v, o);
         }
     }
 
     #[test]
-    fn test_read_list() {
+    fn test_read_array() {
         assert_eq!(from_str("["),     Err(SyntaxError(EOFWhileParsingValue, 1, 2)));
-        assert_eq!(from_str("[1"),    Err(SyntaxError(EOFWhileParsingList,  1, 3)));
+        assert_eq!(from_str("[1"),    Err(SyntaxError(EOFWhileParsingArray, 1, 3)));
         assert_eq!(from_str("[1,"),   Err(SyntaxError(EOFWhileParsingValue, 1, 4)));
         assert_eq!(from_str("[1,]"),  Err(SyntaxError(InvalidSyntax,        1, 4)));
         assert_eq!(from_str("[6 7]"), Err(SyntaxError(InvalidSyntax,        1, 4)));
 
-        assert_eq!(from_str("[]"), Ok(List(vec![])));
-        assert_eq!(from_str("[ ]"), Ok(List(vec![])));
-        assert_eq!(from_str("[true]"), Ok(List(vec![Boolean(true)])));
-        assert_eq!(from_str("[ false ]"), Ok(List(vec![Boolean(false)])));
-        assert_eq!(from_str("[null]"), Ok(List(vec![Null])));
+        assert_eq!(from_str("[]"), Ok(Array(vec![])));
+        assert_eq!(from_str("[ ]"), Ok(Array(vec![])));
+        assert_eq!(from_str("[true]"), Ok(Array(vec![Boolean(true)])));
+        assert_eq!(from_str("[ false ]"), Ok(Array(vec![Boolean(false)])));
+        assert_eq!(from_str("[null]"), Ok(Array(vec![Null])));
         assert_eq!(from_str("[3, 1]"),
-                     Ok(List(vec![U64(3), U64(1)])));
+                     Ok(Array(vec![U64(3), U64(1)])));
         assert_eq!(from_str("\n[3, 2]\n"),
-                     Ok(List(vec![U64(3), U64(2)])));
+                     Ok(Array(vec![U64(3), U64(2)])));
         assert_eq!(from_str("[2, [4, 1]]"),
-               Ok(List(vec![U64(2), List(vec![U64(4), U64(1)])])));
+               Ok(Array(vec![U64(2), Array(vec![U64(4), U64(1)])])));
     }
 
     #[test]
-    fn test_decode_list() {
+    fn test_decode_array() {
         let v: Vec<()> = super::decode("[]").unwrap();
-        assert_eq!(v, vec![]);
+        assert_eq!(v, []);
 
         let v: Vec<()> = super::decode("[null]").unwrap();
-        assert_eq!(v, vec![()]);
+        assert_eq!(v, [()]);
 
         let v: Vec<bool> = super::decode("[true]").unwrap();
-        assert_eq!(v, vec![true]);
+        assert_eq!(v, [true]);
 
-        let v: Vec<int> = super::decode("[3, 1]").unwrap();
-        assert_eq!(v, vec![3, 1]);
+        let v: Vec<isize> = super::decode("[3, 1]").unwrap();
+        assert_eq!(v, [3, 1]);
 
-        let v: Vec<Vec<uint>> = super::decode("[[3], [1, 2]]").unwrap();
-        assert_eq!(v, vec![vec![3], vec![1, 2]]);
+        let v: Vec<Vec<usize>> = super::decode("[[3], [1, 2]]").unwrap();
+        assert_eq!(v, [vec![3], vec![1, 2]]);
+    }
+
+    #[test]
+    fn test_decode_tuple() {
+        let t: (usize, usize, usize) = super::decode("[1, 2, 3]").unwrap();
+        assert_eq!(t, (1, 2, 3));
+
+        let t: (usize, string::String) = super::decode("[1, \"two\"]").unwrap();
+        assert_eq!(t, (1, "two".to_string()));
+    }
+
+    #[test]
+    fn test_decode_tuple_malformed_types() {
+        assert!(super::decode::<(usize, string::String)>("[1, 2]").is_err());
+    }
+
+    #[test]
+    fn test_decode_tuple_malformed_length() {
+        assert!(super::decode::<(usize, usize)>("[1, 2, 3]").is_err());
     }
 
     #[test]
@@ -2842,24 +3124,24 @@ mod tests {
         assert_eq!(from_str("{\"a\":1 1"), Err(SyntaxError(InvalidSyntax,         1, 8)));
         assert_eq!(from_str("{\"a\":1,"),  Err(SyntaxError(EOFWhileParsingObject, 1, 8)));
 
-        assert_eq!(from_str("{}").unwrap(), mk_object([]));
+        assert_eq!(from_str("{}").unwrap(), mk_object(&[]));
         assert_eq!(from_str("{\"a\": 3}").unwrap(),
-                  mk_object([("a".to_string(), U64(3))]));
+                  mk_object(&[("a".to_string(), U64(3))]));
 
         assert_eq!(from_str(
                       "{ \"a\": null, \"b\" : true }").unwrap(),
-                  mk_object([
+                  mk_object(&[
                       ("a".to_string(), Null),
                       ("b".to_string(), Boolean(true))]));
         assert_eq!(from_str("\n{ \"a\": null, \"b\" : true }\n").unwrap(),
-                  mk_object([
+                  mk_object(&[
                       ("a".to_string(), Null),
                       ("b".to_string(), Boolean(true))]));
         assert_eq!(from_str(
                       "{\"a\" : 1.0 ,\"b\": [ true ]}").unwrap(),
-                  mk_object([
+                  mk_object(&[
                       ("a".to_string(), F64(1.0)),
-                      ("b".to_string(), List(vec![Boolean(true)]))
+                      ("b".to_string(), Array(vec![Boolean(true)]))
                   ]));
         assert_eq!(from_str(
                       "{\
@@ -2870,13 +3152,13 @@ mod tests {
                               { \"c\": {\"d\": null} } \
                           ]\
                       }").unwrap(),
-                  mk_object([
+                  mk_object(&[
                       ("a".to_string(), F64(1.0)),
-                      ("b".to_string(), List(vec![
+                      ("b".to_string(), Array(vec![
                           Boolean(true),
                           String("foo\nbar".to_string()),
-                          mk_object([
-                              ("c".to_string(), mk_object([("d".to_string(), Null)]))
+                          mk_object(&[
+                              ("c".to_string(), mk_object(&[("d".to_string(), Null)]))
                           ])
                       ]))
                   ]));
@@ -2901,7 +3183,7 @@ mod tests {
         );
     }
 
-    #[deriving(Decodable)]
+    #[derive(RustcDecodable)]
     struct FloatStruct {
         f: f64,
         a: Vec<f64>
@@ -2911,16 +3193,16 @@ mod tests {
         let s = "{\"f\":null,\"a\":[null,123]}";
         let obj: FloatStruct = super::decode(s).unwrap();
         assert!(obj.f.is_nan());
-        assert!(obj.a.get(0).is_nan());
-        assert_eq!(obj.a.get(1), &123f64);
+        assert!(obj.a[0].is_nan());
+        assert_eq!(obj.a[1], 123f64);
     }
 
     #[test]
     fn test_decode_option() {
-        let value: Option<String> = super::decode("null").unwrap();
+        let value: Option<string::String> = super::decode("null").unwrap();
         assert_eq!(value, None);
 
-        let value: Option<String> = super::decode("\"jodhpurs\"").unwrap();
+        let value: Option<string::String> = super::decode("\"jodhpurs\"").unwrap();
         assert_eq!(value, Some("jodhpurs".to_string()));
     }
 
@@ -2938,41 +3220,40 @@ mod tests {
     fn test_decode_map() {
         let s = "{\"a\": \"Dog\", \"b\": {\"variant\":\"Frog\",\
                   \"fields\":[\"Henry\", 349]}}";
-        let mut map: TreeMap<String, Animal> = super::decode(s).unwrap();
+        let mut map: BTreeMap<string::String, Animal> = super::decode(s).unwrap();
 
-        assert_eq!(map.pop(&"a".to_string()), Some(Dog));
-        assert_eq!(map.pop(&"b".to_string()), Some(Frog("Henry".to_string(), 349)));
+        assert_eq!(map.remove(&"a".to_string()), Some(Dog));
+        assert_eq!(map.remove(&"b".to_string()), Some(Frog("Henry".to_string(), 349)));
     }
 
     #[test]
     fn test_multiline_errors() {
         assert_eq!(from_str("{\n  \"foo\":\n \"bar\""),
-            Err(SyntaxError(EOFWhileParsingObject, 3u, 8u)));
+            Err(SyntaxError(EOFWhileParsingObject, 3, 8)));
     }
 
-    #[deriving(Decodable)]
+    #[derive(RustcDecodable)]
     #[allow(dead_code)]
     struct DecodeStruct {
         x: f64,
         y: bool,
-        z: String,
+        z: string::String,
         w: Vec<DecodeStruct>
     }
-    #[deriving(Decodable)]
+    #[derive(RustcDecodable)]
     enum DecodeEnum {
         A(f64),
-        B(String)
+        B(string::String)
     }
-    fn check_err<T: Decodable<Decoder, DecoderError>>(to_parse: &'static str,
-                                                      expected: DecoderError) {
+    fn check_err<T: Decodable>(to_parse: &'static str, expected: DecoderError) {
         let res: DecodeResult<T> = match from_str(to_parse) {
             Err(e) => Err(ParseError(e)),
             Ok(json) => Decodable::decode(&mut Decoder::new(json))
         };
         match res {
-            Ok(_) => fail!("`{}` parsed & decoded ok, expecting error `{}`",
+            Ok(_) => panic!("`{:?}` parsed & decoded ok, expecting error `{:?}`",
                               to_parse, expected),
-            Err(ParseError(e)) => fail!("`{}` is not valid json: {}",
+            Err(ParseError(e)) => panic!("`{:?}` is not valid json: {:?}",
                                            to_parse, e),
             Err(e) => {
                 assert_eq!(e, expected);
@@ -2989,7 +3270,7 @@ mod tests {
         check_err::<DecodeStruct>("{\"x\": 1, \"y\": true, \"z\": {}, \"w\": []}",
                                   ExpectedError("String".to_string(), "{}".to_string()));
         check_err::<DecodeStruct>("{\"x\": 1, \"y\": true, \"z\": \"\", \"w\": null}",
-                                  ExpectedError("List".to_string(), "null".to_string()));
+                                  ExpectedError("Array".to_string(), "null".to_string()));
         check_err::<DecodeStruct>("{\"x\": 1, \"y\": true, \"z\": \"\"}",
                                   MissingFieldError("w".to_string()));
     }
@@ -3002,7 +3283,7 @@ mod tests {
         check_err::<DecodeEnum>("{\"variant\": \"A\"}",
                                 MissingFieldError("fields".to_string()));
         check_err::<DecodeEnum>("{\"variant\": \"A\", \"fields\": null}",
-                                ExpectedError("List".to_string(), "null".to_string()));
+                                ExpectedError("Array".to_string(), "null".to_string()));
         check_err::<DecodeEnum>("{\"variant\": \"C\", \"fields\": []}",
                                 UnknownVariantError("C".to_string()));
     }
@@ -3010,24 +3291,31 @@ mod tests {
     #[test]
     fn test_find(){
         let json_value = from_str("{\"dog\" : \"cat\"}").unwrap();
-        let found_str = json_value.find(&"dog".to_string());
-        assert!(found_str.is_some() && found_str.unwrap().as_string().unwrap() == "cat");
+        let found_str = json_value.find("dog");
+        assert!(found_str.unwrap().as_string().unwrap() == "cat");
     }
 
     #[test]
     fn test_find_path(){
         let json_value = from_str("{\"dog\":{\"cat\": {\"mouse\" : \"cheese\"}}}").unwrap();
-        let found_str = json_value.find_path(&[&"dog".to_string(),
-                                             &"cat".to_string(), &"mouse".to_string()]);
-        assert!(found_str.is_some() && found_str.unwrap().as_string().unwrap() == "cheese");
+        let found_str = json_value.find_path(&["dog", "cat", "mouse"]);
+        assert!(found_str.unwrap().as_string().unwrap() == "cheese");
     }
 
     #[test]
     fn test_search(){
         let json_value = from_str("{\"dog\":{\"cat\": {\"mouse\" : \"cheese\"}}}").unwrap();
-        let found_str = json_value.search(&"mouse".to_string()).and_then(|j| j.as_string());
-        assert!(found_str.is_some());
+        let found_str = json_value.search("mouse").and_then(|j| j.as_string());
         assert!(found_str.unwrap() == "cheese");
+    }
+
+    #[test]
+    fn test_index(){
+        let json_value = from_str("{\"animals\":[\"dog\",\"cat\",\"mouse\"]}").unwrap();
+        let ref array = json_value["animals"];
+        assert_eq!(array[0].as_string().unwrap(), "dog");
+        assert_eq!(array[1].as_string().unwrap(), "cat");
+        assert_eq!(array[2].as_string().unwrap(), "mouse");
     }
 
     #[test]
@@ -3044,17 +3332,17 @@ mod tests {
     }
 
     #[test]
-    fn test_is_list(){
+    fn test_is_array(){
         let json_value = from_str("[1, 2, 3]").unwrap();
-        assert!(json_value.is_list());
+        assert!(json_value.is_array());
     }
 
     #[test]
-    fn test_as_list(){
+    fn test_as_array(){
         let json_value = from_str("[1, 2, 3]").unwrap();
-        let json_list = json_value.as_list();
+        let json_array = json_value.as_array();
         let expected_length = 3;
-        assert!(json_list.is_some() && json_list.unwrap().len() == expected_length);
+        assert!(json_array.is_some() && json_array.unwrap().len() == expected_length);
     }
 
     #[test]
@@ -3168,20 +3456,14 @@ mod tests {
     #[test]
     fn test_encode_hashmap_with_numeric_key() {
         use std::str::from_utf8;
-        use std::io::Writer;
-        use std::io::MemWriter;
         use std::collections::HashMap;
-        let mut hm: HashMap<uint, bool> = HashMap::new();
+        let mut hm: HashMap<usize, bool> = HashMap::new();
         hm.insert(1, true);
-        let mut mem_buf = MemWriter::new();
-        {
-            let mut encoder = Encoder::new(&mut mem_buf as &mut io::Writer);
-            hm.encode(&mut encoder).unwrap();
-        }
-        let bytes = mem_buf.unwrap();
-        let json_str = from_utf8(bytes.as_slice()).unwrap();
+        let mut mem_buf = Vec::new();
+        write!(&mut mem_buf, "{}", super::as_pretty_json(&hm)).unwrap();
+        let json_str = from_utf8(&mem_buf[..]).unwrap();
         match from_str(json_str) {
-            Err(_) => fail!("Unable to parse json_str: {}", json_str),
+            Err(_) => panic!("Unable to parse json_str: {:?}", json_str),
             _ => {} // it parsed and we are good to go
         }
     }
@@ -3189,20 +3471,14 @@ mod tests {
     #[test]
     fn test_prettyencode_hashmap_with_numeric_key() {
         use std::str::from_utf8;
-        use std::io::Writer;
-        use std::io::MemWriter;
         use std::collections::HashMap;
-        let mut hm: HashMap<uint, bool> = HashMap::new();
+        let mut hm: HashMap<usize, bool> = HashMap::new();
         hm.insert(1, true);
-        let mut mem_buf = MemWriter::new();
-        {
-            let mut encoder = PrettyEncoder::new(&mut mem_buf as &mut io::Writer);
-            hm.encode(&mut encoder).unwrap()
-        }
-        let bytes = mem_buf.unwrap();
-        let json_str = from_utf8(bytes.as_slice()).unwrap();
+        let mut mem_buf = Vec::new();
+        write!(&mut mem_buf, "{}", super::as_pretty_json(&hm)).unwrap();
+        let json_str = from_utf8(&mem_buf[..]).unwrap();
         match from_str(json_str) {
-            Err(_) => fail!("Unable to parse json_str: {}", json_str),
+            Err(_) => panic!("Unable to parse json_str: {:?}", json_str),
             _ => {} // it parsed and we are good to go
         }
     }
@@ -3210,42 +3486,37 @@ mod tests {
     #[test]
     fn test_prettyencoder_indent_level_param() {
         use std::str::from_utf8;
-        use std::io::MemWriter;
-        use std::collections::TreeMap;
+        use std::collections::BTreeMap;
 
-        let mut tree = TreeMap::new();
+        let mut tree = BTreeMap::new();
 
-        tree.insert("hello".into_string(), String("guten tag".into_string()));
-        tree.insert("goodbye".into_string(), String("sayonara".into_string()));
+        tree.insert("hello".to_string(), String("guten tag".to_string()));
+        tree.insert("goodbye".to_string(), String("sayonara".to_string()));
 
-        let json = List(
+        let json = Array(
             // The following layout below should look a lot like
             // the pretty-printed JSON (indent * x)
             vec!
             ( // 0x
-                String("greetings".into_string()), // 1x
+                String("greetings".to_string()), // 1x
                 Object(tree), // 1x + 2x + 2x + 1x
             ) // 0x
-            // End JSON list (7 lines)
+            // End JSON array (7 lines)
         );
 
         // Helper function for counting indents
-        fn indents(source: &str) -> uint {
-            let trimmed = source.trim_left_chars(' ');
+        fn indents(source: &str) -> usize {
+            let trimmed = source.trim_left_matches(' ');
             source.len() - trimmed.len()
         }
 
         // Test up to 4 spaces of indents (more?)
-        for i in range(0, 4u) {
-            let mut writer = MemWriter::new();
-            {
-                let ref mut encoder = PrettyEncoder::new(&mut writer);
-                encoder.set_indent(i);
-                json.encode(encoder).unwrap();
-            }
+        for i in 0..4 {
+            let mut writer = Vec::new();
+            write!(&mut writer, "{}",
+                   super::as_pretty_json(&json).indent(i)).unwrap();
 
-            let bytes = writer.unwrap();
-            let printed = from_utf8(bytes.as_slice()).unwrap();
+            let printed = from_utf8(&writer[..]).unwrap();
 
             // Check for indents at each line
             let lines: Vec<&str> = printed.lines().collect();
@@ -3265,16 +3536,34 @@ mod tests {
     }
 
     #[test]
+    fn test_hashmap_with_enum_key() {
+        use std::collections::HashMap;
+        use json;
+        #[derive(RustcEncodable, Eq, Hash, PartialEq, RustcDecodable, Debug)]
+        enum Enum {
+            Foo,
+            #[allow(dead_code)]
+            Bar,
+        }
+        let mut map = HashMap::new();
+        map.insert(Enum::Foo, 0);
+        let result = json::encode(&map).unwrap();
+        assert_eq!(&result[..], r#"{"Foo":0}"#);
+        let decoded: HashMap<Enum, _> = json::decode(&result).unwrap();
+        assert_eq!(map, decoded);
+    }
+
+    #[test]
     fn test_hashmap_with_numeric_key_can_handle_double_quote_delimited_key() {
         use std::collections::HashMap;
         use Decodable;
         let json_str = "{\"1\":true}";
         let json_obj = match from_str(json_str) {
-            Err(_) => fail!("Unable to parse json_str: {}", json_str),
+            Err(_) => panic!("Unable to parse json_str: {:?}", json_str),
             Ok(o) => o
         };
         let mut decoder = Decoder::new(json_obj);
-        let _hm: HashMap<uint, bool> = Decodable::decode(&mut decoder).unwrap();
+        let _hm: HashMap<usize, bool> = Decodable::decode(&mut decoder).unwrap();
     }
 
     #[test]
@@ -3283,11 +3572,11 @@ mod tests {
         use Decodable;
         let json_str = "{\"a\":true}";
         let json_obj = match from_str(json_str) {
-            Err(_) => fail!("Unable to parse json_str: {}", json_str),
+            Err(_) => panic!("Unable to parse json_str: {:?}", json_str),
             Ok(o) => o
         };
         let mut decoder = Decoder::new(json_obj);
-        let result: Result<HashMap<uint, bool>, DecoderError> = Decodable::decode(&mut decoder);
+        let result: Result<HashMap<usize, bool>, DecoderError> = Decodable::decode(&mut decoder);
         assert_eq!(result, Err(ExpectedError("Number".to_string(), "a".to_string())));
     }
 
@@ -3301,34 +3590,37 @@ mod tests {
                 None => { break; }
             };
             let (ref expected_evt, ref expected_stack) = expected[i];
-            if !parser.stack().is_equal_to(expected_stack.as_slice()) {
-                fail!("Parser stack is not equal to {}", expected_stack);
+            if !parser.stack().is_equal_to(expected_stack) {
+                panic!("Parser stack is not equal to {:?}", expected_stack);
             }
             assert_eq!(&evt, expected_evt);
             i+=1;
         }
     }
     #[test]
-    #[ignore(cfg(target_word_size = "32"))] // FIXME(#14064)
+    #[cfg_attr(target_pointer_width = "32", ignore)] // FIXME(#14064)
     fn test_streaming_parser() {
         assert_stream_equal(
             r#"{ "foo":"bar", "array" : [0, 1, 2, 3, 4, 5], "idents":[null,true,false]}"#,
             vec![
                 (ObjectStart,             vec![]),
-                  (StringValue("bar".to_string()),   vec![Key("foo")]),
-                  (ListStart,             vec![Key("array")]),
-                    (U64Value(0),         vec![Key("array"), Index(0)]),
-                    (U64Value(1),         vec![Key("array"), Index(1)]),
-                    (U64Value(2),         vec![Key("array"), Index(2)]),
-                    (U64Value(3),         vec![Key("array"), Index(3)]),
-                    (U64Value(4),         vec![Key("array"), Index(4)]),
-                    (U64Value(5),         vec![Key("array"), Index(5)]),
-                  (ListEnd,               vec![Key("array")]),
-                  (ListStart,             vec![Key("idents")]),
-                    (NullValue,           vec![Key("idents"), Index(0)]),
-                    (BooleanValue(true),  vec![Key("idents"), Index(1)]),
-                    (BooleanValue(false), vec![Key("idents"), Index(2)]),
-                  (ListEnd,               vec![Key("idents")]),
+                  (StringValue("bar".to_string()),   vec![StackElement::Key("foo")]),
+                  (ArrayStart,            vec![StackElement::Key("array")]),
+                    (U64Value(0),         vec![StackElement::Key("array"), StackElement::Index(0)]),
+                    (U64Value(1),         vec![StackElement::Key("array"), StackElement::Index(1)]),
+                    (U64Value(2),         vec![StackElement::Key("array"), StackElement::Index(2)]),
+                    (U64Value(3),         vec![StackElement::Key("array"), StackElement::Index(3)]),
+                    (U64Value(4),         vec![StackElement::Key("array"), StackElement::Index(4)]),
+                    (U64Value(5),         vec![StackElement::Key("array"), StackElement::Index(5)]),
+                  (ArrayEnd,              vec![StackElement::Key("array")]),
+                  (ArrayStart,            vec![StackElement::Key("idents")]),
+                    (NullValue,           vec![StackElement::Key("idents"),
+                                               StackElement::Index(0)]),
+                    (BooleanValue(true),  vec![StackElement::Key("idents"),
+                                               StackElement::Index(1)]),
+                    (BooleanValue(false), vec![StackElement::Key("idents"),
+                                               StackElement::Index(2)]),
+                  (ArrayEnd,              vec![StackElement::Key("idents")]),
                 (ObjectEnd,               vec![]),
             ]
         );
@@ -3343,8 +3635,9 @@ mod tests {
             }
         }
     }
+
     #[test]
-    #[ignore(cfg(target_word_size = "32"))] // FIXME(#14064)
+    #[cfg_attr(target_pointer_width = "32", ignore)] // FIXME(#14064)
     fn test_read_object_streaming() {
         assert_eq!(last_event("{ "),      Error(SyntaxError(EOFWhileParsingObject, 1, 3)));
         assert_eq!(last_event("{1"),      Error(SyntaxError(KeyMustBeAString,      1, 2)));
@@ -3357,6 +3650,7 @@ mod tests {
         assert_eq!(last_event("{\"a\":1"),   Error(SyntaxError(EOFWhileParsingObject, 1, 7)));
         assert_eq!(last_event("{\"a\":1 1"), Error(SyntaxError(InvalidSyntax,         1, 8)));
         assert_eq!(last_event("{\"a\":1,"),  Error(SyntaxError(EOFWhileParsingObject, 1, 8)));
+        assert_eq!(last_event("{\"a\":1,}"), Error(SyntaxError(TrailingComma, 1, 8)));
 
         assert_stream_equal(
             "{}",
@@ -3366,7 +3660,7 @@ mod tests {
             "{\"a\": 3}",
             vec![
                 (ObjectStart,        vec![]),
-                  (U64Value(3),      vec![Key("a")]),
+                  (U64Value(3),      vec![StackElement::Key("a")]),
                 (ObjectEnd,          vec![]),
             ]
         );
@@ -3374,8 +3668,8 @@ mod tests {
             "{ \"a\": null, \"b\" : true }",
             vec![
                 (ObjectStart,           vec![]),
-                  (NullValue,           vec![Key("a")]),
-                  (BooleanValue(true),  vec![Key("b")]),
+                  (NullValue,           vec![StackElement::Key("a")]),
+                  (BooleanValue(true),  vec![StackElement::Key("b")]),
                 (ObjectEnd,             vec![]),
             ]
         );
@@ -3383,10 +3677,10 @@ mod tests {
             "{\"a\" : 1.0 ,\"b\": [ true ]}",
             vec![
                 (ObjectStart,           vec![]),
-                  (F64Value(1.0),       vec![Key("a")]),
-                  (ListStart,           vec![Key("b")]),
-                    (BooleanValue(true),vec![Key("b"), Index(0)]),
-                  (ListEnd,             vec![Key("b")]),
+                  (F64Value(1.0),       vec![StackElement::Key("a")]),
+                  (ArrayStart,          vec![StackElement::Key("b")]),
+                    (BooleanValue(true),vec![StackElement::Key("b"), StackElement::Index(0)]),
+                  (ArrayEnd,            vec![StackElement::Key("b")]),
                 (ObjectEnd,             vec![]),
             ]
         );
@@ -3401,96 +3695,107 @@ mod tests {
             }"#,
             vec![
                 (ObjectStart,                   vec![]),
-                  (F64Value(1.0),               vec![Key("a")]),
-                  (ListStart,                   vec![Key("b")]),
-                    (BooleanValue(true),        vec![Key("b"), Index(0)]),
-                    (StringValue("foo\nbar".to_string()),  vec![Key("b"), Index(1)]),
-                    (ObjectStart,               vec![Key("b"), Index(2)]),
-                      (ObjectStart,             vec![Key("b"), Index(2), Key("c")]),
-                        (NullValue,             vec![Key("b"), Index(2), Key("c"), Key("d")]),
-                      (ObjectEnd,               vec![Key("b"), Index(2), Key("c")]),
-                    (ObjectEnd,                 vec![Key("b"), Index(2)]),
-                  (ListEnd,                     vec![Key("b")]),
+                  (F64Value(1.0),               vec![StackElement::Key("a")]),
+                  (ArrayStart,                  vec![StackElement::Key("b")]),
+                    (BooleanValue(true),        vec![StackElement::Key("b"),
+                                                     StackElement::Index(0)]),
+                    (StringValue("foo\nbar".to_string()),  vec![StackElement::Key("b"),
+                                                                StackElement::Index(1)]),
+                    (ObjectStart,               vec![StackElement::Key("b"),
+                                                     StackElement::Index(2)]),
+                      (ObjectStart,             vec![StackElement::Key("b"),
+                                                     StackElement::Index(2),
+                                                     StackElement::Key("c")]),
+                        (NullValue,             vec![StackElement::Key("b"),
+                                                     StackElement::Index(2),
+                                                     StackElement::Key("c"),
+                                                     StackElement::Key("d")]),
+                      (ObjectEnd,               vec![StackElement::Key("b"),
+                                                     StackElement::Index(2),
+                                                     StackElement::Key("c")]),
+                    (ObjectEnd,                 vec![StackElement::Key("b"),
+                                                     StackElement::Index(2)]),
+                  (ArrayEnd,                    vec![StackElement::Key("b")]),
                 (ObjectEnd,                     vec![]),
             ]
         );
     }
     #[test]
-    #[ignore(cfg(target_word_size = "32"))] // FIXME(#14064)
-    fn test_read_list_streaming() {
+    #[cfg_attr(target_pointer_width = "32", ignore)] // FIXME(#14064)
+    fn test_read_array_streaming() {
         assert_stream_equal(
             "[]",
             vec![
-                (ListStart, vec![]),
-                (ListEnd,   vec![]),
+                (ArrayStart, vec![]),
+                (ArrayEnd,   vec![]),
             ]
         );
         assert_stream_equal(
             "[ ]",
             vec![
-                (ListStart, vec![]),
-                (ListEnd,   vec![]),
+                (ArrayStart, vec![]),
+                (ArrayEnd,   vec![]),
             ]
         );
         assert_stream_equal(
             "[true]",
             vec![
-                (ListStart,              vec![]),
-                    (BooleanValue(true), vec![Index(0)]),
-                (ListEnd,                vec![]),
+                (ArrayStart,             vec![]),
+                    (BooleanValue(true), vec![StackElement::Index(0)]),
+                (ArrayEnd,               vec![]),
             ]
         );
         assert_stream_equal(
             "[ false ]",
             vec![
-                (ListStart,               vec![]),
-                    (BooleanValue(false), vec![Index(0)]),
-                (ListEnd,                 vec![]),
+                (ArrayStart,              vec![]),
+                    (BooleanValue(false), vec![StackElement::Index(0)]),
+                (ArrayEnd,                vec![]),
             ]
         );
         assert_stream_equal(
             "[null]",
             vec![
-                (ListStart,     vec![]),
-                    (NullValue, vec![Index(0)]),
-                (ListEnd,       vec![]),
+                (ArrayStart,    vec![]),
+                    (NullValue, vec![StackElement::Index(0)]),
+                (ArrayEnd,      vec![]),
             ]
         );
         assert_stream_equal(
             "[3, 1]",
             vec![
-                (ListStart,     vec![]),
-                    (U64Value(3), vec![Index(0)]),
-                    (U64Value(1), vec![Index(1)]),
-                (ListEnd,       vec![]),
+                (ArrayStart,      vec![]),
+                    (U64Value(3), vec![StackElement::Index(0)]),
+                    (U64Value(1), vec![StackElement::Index(1)]),
+                (ArrayEnd,        vec![]),
             ]
         );
         assert_stream_equal(
             "\n[3, 2]\n",
             vec![
-                (ListStart,     vec![]),
-                    (U64Value(3), vec![Index(0)]),
-                    (U64Value(2), vec![Index(1)]),
-                (ListEnd,       vec![]),
+                (ArrayStart,      vec![]),
+                    (U64Value(3), vec![StackElement::Index(0)]),
+                    (U64Value(2), vec![StackElement::Index(1)]),
+                (ArrayEnd,        vec![]),
             ]
         );
         assert_stream_equal(
             "[2, [4, 1]]",
             vec![
-                (ListStart,            vec![]),
-                    (U64Value(2),      vec![Index(0)]),
-                    (ListStart,        vec![Index(1)]),
-                        (U64Value(4),  vec![Index(1), Index(0)]),
-                        (U64Value(1),  vec![Index(1), Index(1)]),
-                    (ListEnd,          vec![Index(1)]),
-                (ListEnd,              vec![]),
+                (ArrayStart,           vec![]),
+                    (U64Value(2),      vec![StackElement::Index(0)]),
+                    (ArrayStart,       vec![StackElement::Index(1)]),
+                        (U64Value(4),  vec![StackElement::Index(1), StackElement::Index(0)]),
+                        (U64Value(1),  vec![StackElement::Index(1), StackElement::Index(1)]),
+                    (ArrayEnd,         vec![StackElement::Index(1)]),
+                (ArrayEnd,             vec![]),
             ]
         );
 
         assert_eq!(last_event("["), Error(SyntaxError(EOFWhileParsingValue, 1,  2)));
 
         assert_eq!(from_str("["),     Err(SyntaxError(EOFWhileParsingValue, 1, 2)));
-        assert_eq!(from_str("[1"),    Err(SyntaxError(EOFWhileParsingList,  1, 3)));
+        assert_eq!(from_str("[1"),    Err(SyntaxError(EOFWhileParsingArray, 1, 3)));
         assert_eq!(from_str("[1,"),   Err(SyntaxError(EOFWhileParsingValue, 1, 4)));
         assert_eq!(from_str("[1,]"),  Err(SyntaxError(InvalidSyntax,        1, 4)));
         assert_eq!(from_str("[6 7]"), Err(SyntaxError(InvalidSyntax,        1, 4)));
@@ -3524,81 +3829,87 @@ mod tests {
         let mut stack = Stack::new();
 
         assert!(stack.is_empty());
-        assert!(stack.len() == 0);
+        assert!(stack.is_empty());
         assert!(!stack.last_is_index());
 
         stack.push_index(0);
         stack.bump_index();
 
         assert!(stack.len() == 1);
-        assert!(stack.is_equal_to([Index(1)]));
-        assert!(stack.starts_with([Index(1)]));
-        assert!(stack.ends_with([Index(1)]));
+        assert!(stack.is_equal_to(&[StackElement::Index(1)]));
+        assert!(stack.starts_with(&[StackElement::Index(1)]));
+        assert!(stack.ends_with(&[StackElement::Index(1)]));
         assert!(stack.last_is_index());
-        assert!(stack.get(0) == Index(1));
+        assert!(stack.get(0) == StackElement::Index(1));
 
         stack.push_key("foo".to_string());
 
         assert!(stack.len() == 2);
-        assert!(stack.is_equal_to([Index(1), Key("foo")]));
-        assert!(stack.starts_with([Index(1), Key("foo")]));
-        assert!(stack.starts_with([Index(1)]));
-        assert!(stack.ends_with([Index(1), Key("foo")]));
-        assert!(stack.ends_with([Key("foo")]));
+        assert!(stack.is_equal_to(&[StackElement::Index(1), StackElement::Key("foo")]));
+        assert!(stack.starts_with(&[StackElement::Index(1), StackElement::Key("foo")]));
+        assert!(stack.starts_with(&[StackElement::Index(1)]));
+        assert!(stack.ends_with(&[StackElement::Index(1), StackElement::Key("foo")]));
+        assert!(stack.ends_with(&[StackElement::Key("foo")]));
         assert!(!stack.last_is_index());
-        assert!(stack.get(0) == Index(1));
-        assert!(stack.get(1) == Key("foo"));
+        assert!(stack.get(0) == StackElement::Index(1));
+        assert!(stack.get(1) == StackElement::Key("foo"));
 
         stack.push_key("bar".to_string());
 
         assert!(stack.len() == 3);
-        assert!(stack.is_equal_to([Index(1), Key("foo"), Key("bar")]));
-        assert!(stack.starts_with([Index(1)]));
-        assert!(stack.starts_with([Index(1), Key("foo")]));
-        assert!(stack.starts_with([Index(1), Key("foo"), Key("bar")]));
-        assert!(stack.ends_with([Key("bar")]));
-        assert!(stack.ends_with([Key("foo"), Key("bar")]));
-        assert!(stack.ends_with([Index(1), Key("foo"), Key("bar")]));
+        assert!(stack.is_equal_to(&[StackElement::Index(1),
+                                    StackElement::Key("foo"),
+                                    StackElement::Key("bar")]));
+        assert!(stack.starts_with(&[StackElement::Index(1)]));
+        assert!(stack.starts_with(&[StackElement::Index(1), StackElement::Key("foo")]));
+        assert!(stack.starts_with(&[StackElement::Index(1),
+                                    StackElement::Key("foo"),
+                                    StackElement::Key("bar")]));
+        assert!(stack.ends_with(&[StackElement::Key("bar")]));
+        assert!(stack.ends_with(&[StackElement::Key("foo"), StackElement::Key("bar")]));
+        assert!(stack.ends_with(&[StackElement::Index(1),
+                                  StackElement::Key("foo"),
+                                  StackElement::Key("bar")]));
         assert!(!stack.last_is_index());
-        assert!(stack.get(0) == Index(1));
-        assert!(stack.get(1) == Key("foo"));
-        assert!(stack.get(2) == Key("bar"));
+        assert!(stack.get(0) == StackElement::Index(1));
+        assert!(stack.get(1) == StackElement::Key("foo"));
+        assert!(stack.get(2) == StackElement::Key("bar"));
 
         stack.pop();
 
         assert!(stack.len() == 2);
-        assert!(stack.is_equal_to([Index(1), Key("foo")]));
-        assert!(stack.starts_with([Index(1), Key("foo")]));
-        assert!(stack.starts_with([Index(1)]));
-        assert!(stack.ends_with([Index(1), Key("foo")]));
-        assert!(stack.ends_with([Key("foo")]));
+        assert!(stack.is_equal_to(&[StackElement::Index(1), StackElement::Key("foo")]));
+        assert!(stack.starts_with(&[StackElement::Index(1), StackElement::Key("foo")]));
+        assert!(stack.starts_with(&[StackElement::Index(1)]));
+        assert!(stack.ends_with(&[StackElement::Index(1), StackElement::Key("foo")]));
+        assert!(stack.ends_with(&[StackElement::Key("foo")]));
         assert!(!stack.last_is_index());
-        assert!(stack.get(0) == Index(1));
-        assert!(stack.get(1) == Key("foo"));
+        assert!(stack.get(0) == StackElement::Index(1));
+        assert!(stack.get(1) == StackElement::Key("foo"));
     }
 
     #[test]
     fn test_to_json() {
-        use std::collections::{HashMap,TreeMap};
+        use std::collections::{HashMap,BTreeMap};
         use super::ToJson;
 
-        let list2 = List(vec!(U64(1), U64(2)));
-        let list3 = List(vec!(U64(1), U64(2), U64(3)));
+        let array2 = Array(vec!(U64(1), U64(2)));
+        let array3 = Array(vec!(U64(1), U64(2), U64(3)));
         let object = {
-            let mut tree_map = TreeMap::new();
+            let mut tree_map = BTreeMap::new();
             tree_map.insert("a".to_string(), U64(1));
             tree_map.insert("b".to_string(), U64(2));
             Object(tree_map)
         };
 
-        assert_eq!(list2.to_json(), list2);
+        assert_eq!(array2.to_json(), array2);
         assert_eq!(object.to_json(), object);
-        assert_eq!(3_i.to_json(), I64(3));
+        assert_eq!(3_isize.to_json(), I64(3));
         assert_eq!(4_i8.to_json(), I64(4));
         assert_eq!(5_i16.to_json(), I64(5));
         assert_eq!(6_i32.to_json(), I64(6));
         assert_eq!(7_i64.to_json(), I64(7));
-        assert_eq!(8_u.to_json(), U64(8));
+        assert_eq!(8_usize.to_json(), U64(8));
         assert_eq!(9_u8.to_json(), U64(9));
         assert_eq!(10_u16.to_json(), U64(10));
         assert_eq!(11_u32.to_json(), U64(11));
@@ -3610,24 +3921,41 @@ mod tests {
         assert_eq!(f64::NAN.to_json(), Null);
         assert_eq!(true.to_json(), Boolean(true));
         assert_eq!(false.to_json(), Boolean(false));
+        assert_eq!("abc".to_json(), String("abc".to_string()));
         assert_eq!("abc".to_string().to_json(), String("abc".to_string()));
-        assert_eq!((1u, 2u).to_json(), list2);
-        assert_eq!((1u, 2u, 3u).to_json(), list3);
-        assert_eq!([1u, 2].to_json(), list2);
-        assert_eq!((&[1u, 2, 3]).to_json(), list3);
-        assert_eq!((vec![1u, 2]).to_json(), list2);
-        assert_eq!(vec!(1u, 2, 3).to_json(), list3);
-        let mut tree_map = TreeMap::new();
-        tree_map.insert("a".to_string(), 1u);
+        assert_eq!((1_usize, 2_usize).to_json(), array2);
+        assert_eq!((1_usize, 2_usize, 3_usize).to_json(), array3);
+        assert_eq!([1_usize, 2_usize].to_json(), array2);
+        assert_eq!((&[1_usize, 2_usize, 3_usize]).to_json(), array3);
+        assert_eq!((vec![1_usize, 2_usize]).to_json(), array2);
+        assert_eq!(vec!(1_usize, 2_usize, 3_usize).to_json(), array3);
+        let mut tree_map = BTreeMap::new();
+        tree_map.insert("a".to_string(), 1 as usize);
         tree_map.insert("b".to_string(), 2);
         assert_eq!(tree_map.to_json(), object);
         let mut hash_map = HashMap::new();
-        hash_map.insert("a".to_string(), 1u);
+        hash_map.insert("a".to_string(), 1 as usize);
         hash_map.insert("b".to_string(), 2);
         assert_eq!(hash_map.to_json(), object);
-        assert_eq!(Some(15i).to_json(), I64(15));
-        assert_eq!(Some(15u).to_json(), U64(15));
-        assert_eq!(None::<int>.to_json(), Null);
+        assert_eq!(Some(15).to_json(), I64(15));
+        assert_eq!(Some(15 as usize).to_json(), U64(15));
+        assert_eq!(None::<isize>.to_json(), Null);
+    }
+
+    #[test]
+    fn test_encode_hashmap_with_arbitrary_key() {
+        use std::collections::HashMap;
+        #[derive(PartialEq, Eq, Hash, RustcEncodable)]
+        struct ArbitraryType(usize);
+        let mut hm: HashMap<ArbitraryType, bool> = HashMap::new();
+        hm.insert(ArbitraryType(1), true);
+        let mut mem_buf = string::String::new();
+        let mut encoder = Encoder::new(&mut mem_buf);
+        let result = hm.encode(&mut encoder);
+        match result.err().unwrap() {
+            EncoderError::BadHashmapKey => (),
+            _ => panic!("expected bad hash map key")
+        }
     }
 
     #[bench]
@@ -3665,9 +3993,9 @@ mod tests {
         });
     }
 
-    fn big_json() -> String {
+    fn big_json() -> string::String {
         let mut src = "[\n".to_string();
-        for _ in range(0i, 500) {
+        for _ in 0..500 {
             src.push_str(r#"{ "a": true, "b": null, "c":3.1415, "d": "Hello world", "e": \
                             [1,2,3]},"#);
         }
@@ -3679,7 +4007,7 @@ mod tests {
     fn bench_streaming_large(b: &mut Bencher) {
         let src = big_json();
         b.iter( || {
-            let mut parser = Parser::new(src.as_slice().chars());
+            let mut parser = Parser::new(src.chars());
             loop {
                 match parser.next() {
                     None => return,
@@ -3691,6 +4019,6 @@ mod tests {
     #[bench]
     fn bench_large(b: &mut Bencher) {
         let src = big_json();
-        b.iter( || { let _ = from_str(src.as_slice()); });
+        b.iter( || { let _ = from_str(&src); });
     }
 }

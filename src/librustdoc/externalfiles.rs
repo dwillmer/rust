@@ -8,9 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::{io, str};
+use std::fs::File;
+use std::io::prelude::*;
+use std::io;
+use std::path::{PathBuf, Path};
+use std::str;
 
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct ExternalHtml{
     pub in_header: String,
     pub before_content: String,
@@ -33,16 +37,17 @@ impl ExternalHtml {
     }
 }
 
-pub fn load_string(input: &Path) -> io::IoResult<Option<String>> {
-    let mut f = try!(io::File::open(input));
-    let d = try!(f.read_to_end());
-    Ok(str::from_utf8(d.as_slice()).map(|s| s.to_string()))
+pub fn load_string(input: &Path) -> io::Result<Option<String>> {
+    let mut f = try!(File::open(input));
+    let mut d = Vec::new();
+    try!(f.read_to_end(&mut d));
+    Ok(str::from_utf8(&d).map(|s| s.to_string()).ok())
 }
 
 macro_rules! load_or_return {
     ($input: expr, $cant_read: expr, $not_utf8: expr) => {
         {
-            let input = Path::new($input);
+            let input = PathBuf::from(&$input[..]);
             match ::externalfiles::load_string(&input) {
                 Err(e) => {
                     let _ = writeln!(&mut io::stderr(),
@@ -62,9 +67,9 @@ macro_rules! load_or_return {
 
 pub fn load_external_files(names: &[String]) -> Option<String> {
     let mut out = String::new();
-    for name in names.iter() {
-        out.push_str(load_or_return!(name.as_slice(), None, None).as_slice());
-        out.push_char('\n');
+    for name in names {
+        out.push_str(&*load_or_return!(&name, None, None));
+        out.push('\n');
     }
     Some(out)
 }

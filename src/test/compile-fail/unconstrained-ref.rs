@@ -1,4 +1,4 @@
-// Copyright 2012 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2012-2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -13,5 +13,5 @@ struct S<'a, T:'a> {
 }
 
 fn main() {
-    S { o: &None }; //~ ERROR cannot determine a type for this expression: unconstrained type
+    S { o: &None }; //~ ERROR type annotations or generic parameter binding required
 }

@@ -28,7 +28,8 @@
 //! example) requires more effort. See `emit_lint` and `GatherNodeLevels`
 //! in `context.rs`.
 
-#![macro_escape]
+pub use self::Level::*;
+pub use self::LintSource::*;
 
 use std::hash;
 use std::ascii::AsciiExt;
@@ -36,9 +37,11 @@ use syntax::codemap::Span;
 use syntax::visit::FnKind;
 use syntax::ast;
 
-pub use lint::context::{Context, LintStore, raw_emit_lint, check_crate, gather_attrs};
+pub use lint::context::{Context, LintStore, raw_emit_lint, check_crate, gather_attrs,
+                        GatherNodeLevels};
 
 /// Specification of a single lint.
+#[derive(Copy, Clone, Debug)]
 pub struct Lint {
     /// A string identifier for the lint.
     ///
@@ -64,13 +67,13 @@ pub struct Lint {
 impl Lint {
     /// Get the lint's name, with ASCII letters converted to lowercase.
     pub fn name_lower(&self) -> String {
-        self.name.to_ascii_lower()
+        self.name.to_ascii_lowercase()
     }
 }
 
 /// Build a `Lint` initializer.
 #[macro_export]
-macro_rules! lint_initializer (
+macro_rules! lint_initializer {
     ($name:ident, $level:ident, $desc:expr) => (
         ::rustc::lint::Lint {
             name: stringify!($name),
@@ -78,11 +81,11 @@ macro_rules! lint_initializer (
             desc: $desc,
         }
     )
-)
+}
 
 /// Declare a static item of type `&'static Lint`.
 #[macro_export]
-macro_rules! declare_lint (
+macro_rules! declare_lint {
     // FIXME(#14660): deduplicate
     (pub $name:ident, $level:ident, $desc:expr) => (
         pub static $name: &'static ::rustc::lint::Lint
@@ -92,18 +95,18 @@ macro_rules! declare_lint (
         static $name: &'static ::rustc::lint::Lint
             = &lint_initializer!($name, $level, $desc);
     );
-)
+}
 
 /// Declare a static `LintArray` and return it as an expression.
 #[macro_export]
-macro_rules! lint_array ( ($( $lint:expr ),*) => (
+macro_rules! lint_array { ($( $lint:expr ),*) => (
     {
-        static array: LintArray = &[ $( $lint ),* ];
-        array
+        static ARRAY: LintArray = &[ $( &$lint ),* ];
+        ARRAY
     }
-))
+) }
 
-pub type LintArray = &'static [&'static Lint];
+pub type LintArray = &'static [&'static &'static Lint];
 
 /// Trait for types providing lint checks.
 ///
@@ -125,7 +128,6 @@ pub trait LintPass {
     fn check_crate(&mut self, _: &Context, _: &ast::Crate) { }
     fn check_ident(&mut self, _: &Context, _: Span, _: ast::Ident) { }
     fn check_mod(&mut self, _: &Context, _: &ast::Mod, _: Span, _: ast::NodeId) { }
-    fn check_view_item(&mut self, _: &Context, _: &ast::ViewItem) { }
     fn check_foreign_item(&mut self, _: &Context, _: &ast::ForeignItem) { }
     fn check_item(&mut self, _: &Context, _: &ast::Item) { }
     fn check_local(&mut self, _: &Context, _: &ast::Local) { }
@@ -139,18 +141,19 @@ pub trait LintPass {
     fn check_ty(&mut self, _: &Context, _: &ast::Ty) { }
     fn check_generics(&mut self, _: &Context, _: &ast::Generics) { }
     fn check_fn(&mut self, _: &Context,
-        _: &FnKind, _: &ast::FnDecl, _: &ast::Block, _: Span, _: ast::NodeId) { }
-    fn check_ty_method(&mut self, _: &Context, _: &ast::TypeMethod) { }
-    fn check_trait_method(&mut self, _: &Context, _: &ast::TraitItem) { }
+        _: FnKind, _: &ast::FnDecl, _: &ast::Block, _: Span, _: ast::NodeId) { }
+    fn check_trait_item(&mut self, _: &Context, _: &ast::TraitItem) { }
+    fn check_impl_item(&mut self, _: &Context, _: &ast::ImplItem) { }
     fn check_struct_def(&mut self, _: &Context,
         _: &ast::StructDef, _: ast::Ident, _: &ast::Generics, _: ast::NodeId) { }
     fn check_struct_def_post(&mut self, _: &Context,
         _: &ast::StructDef, _: ast::Ident, _: &ast::Generics, _: ast::NodeId) { }
     fn check_struct_field(&mut self, _: &Context, _: &ast::StructField) { }
     fn check_variant(&mut self, _: &Context, _: &ast::Variant, _: &ast::Generics) { }
+    fn check_variant_post(&mut self, _: &Context, _: &ast::Variant, _: &ast::Generics) { }
     fn check_opt_lifetime_ref(&mut self, _: &Context, _: Span, _: &Option<ast::Lifetime>) { }
     fn check_lifetime_ref(&mut self, _: &Context, _: &ast::Lifetime) { }
-    fn check_lifetime_decl(&mut self, _: &Context, _: &ast::LifetimeDef) { }
+    fn check_lifetime_def(&mut self, _: &Context, _: &ast::LifetimeDef) { }
     fn check_explicit_self(&mut self, _: &Context, _: &ast::ExplicitSelf) { }
     fn check_mac(&mut self, _: &Context, _: &ast::Mac) { }
     fn check_path(&mut self, _: &Context, _: &ast::Path, _: ast::NodeId) { }
@@ -168,7 +171,7 @@ pub trait LintPass {
 pub type LintPassObject = Box<LintPass + 'static>;
 
 /// Identifies a lint known to the compiler.
-#[deriving(Clone)]
+#[derive(Clone, Copy)]
 pub struct LintId {
     // Identity is based on pointer equality of this field.
     lint: &'static Lint,
@@ -182,8 +185,8 @@ impl PartialEq for LintId {
 
 impl Eq for LintId { }
 
-impl<S: hash::Writer> hash::Hash<S> for LintId {
-    fn hash(&self, state: &mut S) {
+impl hash::Hash for LintId {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
         let ptr = self.lint as *const Lint;
         ptr.hash(state);
     }
@@ -204,7 +207,7 @@ impl LintId {
 }
 
 /// Setting for how to handle a lint.
-#[deriving(Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Debug)]
 pub enum Level {
     Allow, Warn, Deny, Forbid
 }
@@ -233,7 +236,7 @@ impl Level {
 }
 
 /// How a lint level was set.
-#[deriving(Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LintSource {
     /// Lint is at the default level as declared
     /// in rustc or a plugin.

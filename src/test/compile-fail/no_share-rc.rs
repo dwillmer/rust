@@ -14,8 +14,7 @@ use std::cell::RefCell;
 fn bar<T: Sync>(_: T) {}
 
 fn main() {
-    let x = Rc::new(RefCell::new(5i));
+    let x = Rc::new(RefCell::new(5));
     bar(x);
-    //~^ ERROR instantiating a type parameter with an incompatible type
-    //         `std::rc::Rc<std::cell::RefCell<int>>`, which does not fulfill `Sync`
+    //~^ ERROR the trait `core::marker::Sync` is not implemented
 }

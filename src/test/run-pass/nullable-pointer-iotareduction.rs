@@ -8,10 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(macro_rules)]
+
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
 use std::{option, mem};
-use std::gc::{Gc, GC};
 
 // Iota-reduction is a rule in the Calculus of (Co-)Inductive Constructions,
 // which "says that a destructor applied to an object built from a constructor
@@ -21,46 +22,46 @@ use std::gc::{Gc, GC};
 // trying to get assert failure messages that at least identify which case
 // failed.
 
-enum E<T> { Thing(int, T), Nothing((), ((), ()), [i8, ..0]) }
+enum E<T> { Thing(isize, T), Nothing((), ((), ()), [i8; 0]) }
 impl<T> E<T> {
     fn is_none(&self) -> bool {
         match *self {
-            Thing(..) => false,
-            Nothing(..) => true
+            E::Thing(..) => false,
+            E::Nothing(..) => true
         }
     }
-    fn get_ref(&self) -> (int, &T) {
+    fn get_ref(&self) -> (isize, &T) {
         match *self {
-            Nothing(..) => fail!("E::get_ref(Nothing::<{}>)",  stringify!(T)),
-            Thing(x, ref y) => (x, y)
+            E::Nothing(..) => panic!("E::get_ref(Nothing::<{}>)",  stringify!(T)),
+            E::Thing(x, ref y) => (x, y)
         }
     }
 }
 
 macro_rules! check_option {
-    ($e:expr: $T:ty) => {{
-        check_option!($e: $T, |ptr| assert!(*ptr == $e));
+    ($e:expr, $T:ty) => {{
+        check_option!($e, $T, |ptr| assert_eq!(*ptr, $e));
     }};
-    ($e:expr: $T:ty, |$v:ident| $chk:expr) => {{
-        assert!(option::None::<$T>.is_none());
+    ($e:expr, $T:ty, |$v:ident| $chk:expr) => {{
+        assert!(option::Option::None::<$T>.is_none());
         let e = $e;
-        let s_ = option::Some::<$T>(e);
-        let $v = s_.get_ref();
+        let s_ = option::Option::Some::<$T>(e);
+        let $v = s_.as_ref().unwrap();
         $chk
     }}
 }
 
 macro_rules! check_fancy {
-    ($e:expr: $T:ty) => {{
-        check_fancy!($e: $T, |ptr| assert!(*ptr == $e));
+    ($e:expr, $T:ty) => {{
+        check_fancy!($e, $T, |ptr| assert_eq!(*ptr, $e));
     }};
-    ($e:expr: $T:ty, |$v:ident| $chk:expr) => {{
-        assert!(Nothing::<$T>((), ((), ()), [23i8, ..0]).is_none());
+    ($e:expr, $T:ty, |$v:ident| $chk:expr) => {{
+        assert!(E::Nothing::<$T>((), ((), ()), [23; 0]).is_none());
         let e = $e;
-        let t_ = Thing::<$T>(23, e);
+        let t_ = E::Thing::<$T>(23, e);
         match t_.get_ref() {
             (23, $v) => { $chk }
-            _ => fail!("Thing::<{}>(23, {}).get_ref() != (23, _)",
+            _ => panic!("Thing::<{}>(23, {}).get_ref() != (23, _)",
                        stringify!($T), stringify!($e))
         }
     }}
@@ -74,13 +75,12 @@ macro_rules! check_type {
 }
 
 pub fn main() {
-    check_type!(&17: &int);
-    check_type!(box 18: Box<int>);
-    check_type!(box(GC) 19: Gc<int>);
-    check_type!("foo".to_string(): String);
-    check_type!(vec!(20, 22): Vec<int> );
-    let mint: uint = unsafe { mem::transmute(main) };
-    check_type!(main: fn(), |pthing| {
-        assert!(mint == unsafe { mem::transmute(*pthing) })
+    check_type!(&17, &isize);
+    check_type!(box 18, Box<isize>);
+    check_type!("foo".to_string(), String);
+    check_type!(vec!(20, 22), Vec<isize> );
+    let mint: usize = unsafe { mem::transmute(main) };
+    check_type!(main, fn(), |pthing| {
+        assert_eq!(mint, unsafe { mem::transmute(*pthing) })
     });
 }

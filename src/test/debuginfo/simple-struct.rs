@@ -8,36 +8,31 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-windows: FIXME #13256
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:set print pretty off
-// gdb-command:rbreak zzz
-
-// gdb-command:print 'simple-struct::NO_PADDING_16'
+// gdb-command:print 'simple_struct::NO_PADDING_16'
 // gdb-check:$1 = {x = 1000, y = -1001}
 
-// gdb-command:print 'simple-struct::NO_PADDING_32'
+// gdb-command:print 'simple_struct::NO_PADDING_32'
 // gdb-check:$2 = {x = 1, y = 2, z = 3}
 
-// gdb-command:print 'simple-struct::NO_PADDING_64'
+// gdb-command:print 'simple_struct::NO_PADDING_64'
 // gdb-check:$3 = {x = 4, y = 5, z = 6}
 
-// gdb-command:print 'simple-struct::NO_PADDING_163264'
+// gdb-command:print 'simple_struct::NO_PADDING_163264'
 // gdb-check:$4 = {a = 7, b = 8, c = 9, d = 10}
 
-// gdb-command:print 'simple-struct::INTERNAL_PADDING'
+// gdb-command:print 'simple_struct::INTERNAL_PADDING'
 // gdb-check:$5 = {x = 11, y = 12}
 
-// gdb-command:print 'simple-struct::PADDING_AT_END'
+// gdb-command:print 'simple_struct::PADDING_AT_END'
 // gdb-check:$6 = {x = 13, y = 14}
 
 // gdb-command:run
-// gdb-command:finish
 
 // gdb-command:print no_padding16
 // gdb-check:$7 = {x = 10000, y = -10001}
@@ -57,27 +52,25 @@
 // gdb-command:print padding_at_end
 // gdb-check:$12 = {x = -10014, y = 10015}
 
-// gdb-command:print 'simple-struct::NO_PADDING_16'
+// gdb-command:print 'simple_struct::NO_PADDING_16'
 // gdb-check:$13 = {x = 100, y = -101}
 
-// gdb-command:print 'simple-struct::NO_PADDING_32'
+// gdb-command:print 'simple_struct::NO_PADDING_32'
 // gdb-check:$14 = {x = -15, y = -16, z = 17}
 
-// gdb-command:print 'simple-struct::NO_PADDING_64'
+// gdb-command:print 'simple_struct::NO_PADDING_64'
 // gdb-check:$15 = {x = -18, y = 19, z = 20}
 
-// gdb-command:print 'simple-struct::NO_PADDING_163264'
+// gdb-command:print 'simple_struct::NO_PADDING_163264'
 // gdb-check:$16 = {a = -21, b = 22, c = 23, d = 24}
 
-// gdb-command:print 'simple-struct::INTERNAL_PADDING'
+// gdb-command:print 'simple_struct::INTERNAL_PADDING'
 // gdb-check:$17 = {x = 25, y = -26}
 
-// gdb-command:print 'simple-struct::PADDING_AT_END'
+// gdb-command:print 'simple_struct::PADDING_AT_END'
 // gdb-check:$18 = {x = -27, y = 28}
 
-// gdb-command:print inheriting
-// gdb-check:$19 = {a = 10019, b = -10020, x = -10016, y = -10017.5, z = 10018}
-
+// gdb-command:continue
 
 // === LLDB TESTS ==================================================================================
 
@@ -101,16 +94,16 @@
 // lldb-command:print padding_at_end
 // lldb-check:[...]$5 = PaddingAtEnd { x: -10014, y: 10015 }
 
-#![feature(struct_inherit)];
-#![allow(unused_variable)];
-#![allow(dead_code)];
+#![allow(unused_variables)]
+#![allow(dead_code)]
+#![omit_gdb_pretty_printer_section]
 
 struct NoPadding16 {
     x: u16,
     y: i16
 }
 
-virtual struct NoPadding32 {
+struct NoPadding32 {
     x: i32,
     y: f32,
     z: u32
@@ -173,11 +166,6 @@ static mut PADDING_AT_END: PaddingAtEnd = PaddingAtEnd {
     y: 14
 };
 
-struct Inheriting : NoPadding32 {
-    a: u16,
-    b: i16
-}
-
 fn main() {
     let no_padding16 = NoPadding16 { x: 10000, y: -10001 };
     let no_padding32 = NoPadding32 { x: -10002, y: -10003.5, z: 10004 };
@@ -186,8 +174,6 @@ fn main() {
 
     let internal_padding = InternalPadding { x: 10012, y: -10013 };
     let padding_at_end = PaddingAtEnd { x: -10014, y: 10015 };
-
-    let inheriting = Inheriting { a: 10019, b: -10020, x: -10016, y: -10017.5, z: 10018 };
 
     unsafe {
         NO_PADDING_16.x = 100;

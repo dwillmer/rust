@@ -9,9 +9,9 @@
 // except according to those terms.
 
 use Trait::foo;
-//~^ ERROR unresolved import `Trait::foo`. Cannot import from a trait or type implementation
+//~^ ERROR `foo` is not directly importable
 use Foo::new;
-//~^ ERROR unresolved import `Foo::new`. Cannot import from a trait or type implementation
+//~^ ERROR unresolved import `Foo::new`. Not a module `Foo`
 
 pub trait Trait {
     fn foo();

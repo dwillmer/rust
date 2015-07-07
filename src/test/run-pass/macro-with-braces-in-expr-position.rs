@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(macro_rules)]
+use std::thread;
 
-macro_rules! expr (($e: expr) => { $e })
+macro_rules! expr { ($e: expr) => { $e } }
 
 macro_rules! spawn {
     ($($code: tt)*) => {
-        expr!(spawn(proc() {$($code)*}))
+        expr!(thread::spawn(move|| {$($code)*}).join())
     }
 }
 

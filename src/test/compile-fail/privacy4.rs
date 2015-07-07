@@ -8,8 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(globs)]
+#![feature(lang_items, start, no_std)]
 #![no_std] // makes debugging this test *a lot* easier (during resolve)
+
+#[lang = "sized"] pub trait Sized {}
+#[lang="copy"] pub trait Copy {}
 
 // Test to make sure that private items imported through globs remain private
 // when  they're used.
@@ -29,4 +32,4 @@ fn test2() {
     gpriv();
 }
 
-#[start] fn main(_: int, _: *const *const u8) -> int { 3 }
+#[start] fn main(_: isize, _: *const *const u8) -> isize { 3 }

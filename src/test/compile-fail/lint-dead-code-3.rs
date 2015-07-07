@@ -8,9 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
 #![allow(non_camel_case_types)]
 #![deny(dead_code)]
+#![feature(libc)]
 
 #![crate_type="lib"]
 
@@ -18,18 +19,18 @@ extern crate libc;
 
 pub use extern_foo as x;
 extern {
-    fn extern_foo();
+    pub fn extern_foo();
 }
 
-struct Foo; //~ ERROR: code is never used
+struct Foo; //~ ERROR: struct is never used
 impl Foo {
-    fn foo(&self) { //~ ERROR: code is never used
+    fn foo(&self) { //~ ERROR: method is never used
         bar()
     }
 }
 
-fn bar() { //~ ERROR: code is never used
-    fn baz() {} //~ ERROR: code is never used
+fn bar() { //~ ERROR: function is never used
+    fn baz() {} //~ ERROR: function is never used
 
     Foo.foo();
     baz();
@@ -68,9 +69,9 @@ mod blah {
     }
 }
 
-enum c_void {} //~ ERROR: code is never used
+enum c_void {} //~ ERROR: enum is never used
 extern {
-    fn free(p: *const c_void); //~ ERROR: code is never used
+    fn free(p: *const c_void); //~ ERROR: foreign function is never used
 }
 
 // Check provided method
@@ -79,12 +80,12 @@ mod inner {
         fn f(&self) { f(); }
     }
 
-    impl Trait for int {}
+    impl Trait for isize {}
 
     fn f() {}
 }
 
 pub fn foo() {
-    let a = &1i as &inner::Trait;
+    let a: &inner::Trait = &1_isize;
     a.f();
 }

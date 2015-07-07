@@ -9,6 +9,9 @@
 // except according to those terms.
 
 
+
+#![feature(slice_patterns)]
+
 struct Foo {
     string: String
 }
@@ -20,19 +23,19 @@ pub fn main() {
         Foo { string: "baz".to_string() }
     ];
     match x {
-        [ref first, ..tail] => {
-            assert!(first.string == "foo".to_string());
+        [ref first, tail..] => {
+            assert_eq!(first.string, "foo".to_string());
             assert_eq!(tail.len(), 2);
-            assert!(tail[0].string == "bar".to_string());
-            assert!(tail[1].string == "baz".to_string());
+            assert_eq!(tail[0].string, "bar".to_string());
+            assert_eq!(tail[1].string, "baz".to_string());
 
             match tail {
-                [Foo { .. }, _, Foo { .. }, .. _tail] => {
+                [Foo { .. }, _, Foo { .. }, _tail..] => {
                     unreachable!();
                 }
                 [Foo { string: ref a }, Foo { string: ref b }] => {
-                    assert_eq!("bar", a.as_slice().slice(0, a.len()));
-                    assert_eq!("baz", b.as_slice().slice(0, b.len()));
+                    assert_eq!("bar", &a[0..a.len()]);
+                    assert_eq!("baz", &b[0..b.len()]);
                 }
                 _ => {
                     unreachable!();

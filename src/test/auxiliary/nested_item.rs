@@ -9,32 +9,32 @@
 // except according to those terms.
 
 // original problem
-pub fn foo<T>() -> int {
+pub fn foo<T>() -> isize {
     {
-        static foo: int = 2;
+        static foo: isize = 2;
         foo
     }
 }
 
 // issue 8134
 struct Foo;
-impl<T> Foo {
-    pub fn foo(&self) {
-        static X: uint = 1;
+impl Foo {
+    pub fn foo<T>(&self) {
+        static X: usize = 1;
     }
 }
 
 // issue 8134
-pub struct Parser<T>;
-impl<T: std::iter::Iterator<char>> Parser<T> {
+pub struct Parser<T>(T);
+impl<T: std::iter::Iterator<Item=char>> Parser<T> {
     fn in_doctype(&mut self) {
-        static DOCTYPEPattern: [char, ..6] = ['O', 'C', 'T', 'Y', 'P', 'E'];
+        static DOCTYPEPattern: [char; 6] = ['O', 'C', 'T', 'Y', 'P', 'E'];
     }
 }
 
 struct Bar;
-impl<T> Foo {
-    pub fn bar(&self) {
-        static X: uint = 1;
+impl Foo {
+    pub fn bar<T>(&self) {
+        static X: usize = 1;
     }
 }

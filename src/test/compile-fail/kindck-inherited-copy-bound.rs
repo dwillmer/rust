@@ -10,10 +10,12 @@
 
 // Test that Copy bounds inherited by trait are checked.
 
+#![feature(box_syntax)]
+
 use std::any::Any;
-use std::any::AnyRefExt;
 
 trait Foo : Copy {
+    fn foo(&self) {}
 }
 
 impl<T:Copy> Foo for T {
@@ -21,10 +23,15 @@ impl<T:Copy> Foo for T {
 
 fn take_param<T:Foo>(foo: &T) { }
 
-fn main() {
-    let x = box 3i;
-    take_param(&x); //~ ERROR does not fulfill `Copy`
-
-    let y = &x;
-    let z = &x as &Foo; //~ ERROR does not fulfill `Copy`
+fn a() {
+    let x: Box<_> = box 3;
+    take_param(&x); //~ ERROR E0277
 }
+
+fn b() {
+    let x: Box<_> = box 3;
+    let y = &x;
+    let z = &x as &Foo; //~ ERROR E0038
+}
+
+fn main() { }

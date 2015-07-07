@@ -15,63 +15,56 @@ struct Foo<T:Trait> {
 }
 
 enum Bar<T:Trait> {
-    ABar(int),
+    ABar(isize),
     BBar(T),
-    CBar(uint),
+    CBar(usize),
 }
 
-fn explode(x: Foo<uint>) {}
-//~^ ERROR failed to find an implementation
-//~^^ ERROR instantiating a type parameter with an incompatible type
+fn explode(x: Foo<u32>) {}
+//~^ ERROR not implemented
 
 fn kaboom(y: Bar<f32>) {}
-//~^ ERROR failed to find an implementation
-//~^^ ERROR instantiating a type parameter with an incompatible type
+//~^ ERROR not implemented
 
 impl<T> Foo<T> {
+//~^ ERROR the trait `Trait` is not implemented
     fn uhoh() {}
 }
 
 struct Baz {
-//~^ ERROR failed to find an implementation
-//~^^ ERROR instantiating a type parameter with an incompatible type
-    a: Foo<int>,
+    a: Foo<isize>, //~ ERROR not implemented
 }
 
 enum Boo {
-//~^ ERROR failed to find an implementation
-//~^^ ERROR instantiating a type parameter with an incompatible type
-    Quux(Bar<uint>),
+    Quux(Bar<usize>), //~ ERROR not implemented
 }
 
-struct Badness<T> {
-//~^ ERROR failed to find an implementation
-//~^^ ERROR instantiating a type parameter with an incompatible type
-    b: Foo<T>,
+struct Badness<U> {
+    b: Foo<U>, //~ ERROR not implemented
 }
 
-enum MoreBadness<T> {
-//~^ ERROR failed to find an implementation
-//~^^ ERROR instantiating a type parameter with an incompatible type
-    EvenMoreBadness(Bar<T>),
+enum MoreBadness<V> {
+    EvenMoreBadness(Bar<V>), //~ ERROR not implemented
 }
 
-trait PolyTrait<T> {
-    fn whatever() {}
+struct TupleLike(
+    Foo<i32>, //~ ERROR not implemented
+);
+
+enum Enum {
+    DictionaryLike { field: Bar<u8> }, //~ ERROR not implemented
+}
+
+trait PolyTrait<T>
+{
+    fn whatever(&self, t: T) {}
 }
 
 struct Struct;
 
-impl PolyTrait<Foo<uint>> for Struct {
-//~^ ERROR failed to find an implementation
-//~^^ ERROR instantiating a type parameter with an incompatible type
-    fn whatever() {}
+impl PolyTrait<Foo<u16>> for Struct {
+//~^ ERROR not implemented
 }
 
 fn main() {
-    let bar: Bar<f64> = return;
-    //~^ ERROR failed to find an implementation
-    //~^^ ERROR instantiating a type parameter with an incompatible type
-    let _ = bar;
 }
-

@@ -8,11 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn bar(int_param: int) {}
+fn bar(int_param: usize) {}
 
 fn main() {
-    let foo: [u8, ..4] = [1u8, ..4u];
+    let foo: [u8; 4] = [1; 4];
     bar(foo);
-    //~^ ERROR mismatched types: expected `int`, found `[u8, .. 4]`
-    //         (expected int, found vector)
+    //~^ ERROR mismatched types
+    //~| expected `usize`
+    //~| found `[u8; 4]`
+    //~| expected usize
+    //~| found array of 4 elements
 }

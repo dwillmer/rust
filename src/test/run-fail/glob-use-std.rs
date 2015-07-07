@@ -14,13 +14,10 @@
 //
 // Expanded pretty printing causes resolve conflicts.
 
-// error-pattern:fail works
-#![feature(globs)]
+// error-pattern:panic works
 
 use std::*;
 
 fn main() {
-    String::from_byte(b'a'); // avoid an unused import message
-
-    fail!("fail works")
+    panic!("panic works")
 }

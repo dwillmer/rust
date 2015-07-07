@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(lang_items, no_std, libc)]
 #![no_std]
-#![feature(lang_items)]
 #![crate_type = "dylib"]
 
 extern crate libc;
@@ -19,3 +19,4 @@ pub extern fn bar() {}
 
 #[lang = "stack_exhausted"] fn stack_exhausted() {}
 #[lang = "eh_personality"] fn eh_personality() {}
+#[lang = "panic_fmt"] fn panic_fmt() -> ! { loop {} }

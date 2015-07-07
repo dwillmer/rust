@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(globs)]
 #![deny(unused_imports)]
 #![allow(dead_code)]
 
@@ -18,8 +17,8 @@ use std::mem::*;            // shouldn't get errors for not using
                             // everything imported
 
 // Should get errors for both 'Some' and 'None'
-use std::option::{Some, None}; //~ ERROR unused import
-                                //~^ ERROR unused import
+use std::option::Option::{Some, None}; //~ ERROR unused import
+                                     //~^ ERROR unused import
 
 use test::A;       //~ ERROR unused import
 // Be sure that if we just bring some methods into scope that they're also
@@ -44,8 +43,8 @@ mod test {
 }
 
 mod foo {
-    pub struct Point{pub x: int, pub y: int}
-    pub struct Square{pub p: Point, pub h: uint, pub w: uint}
+    pub struct Point{pub x: isize, pub y: isize}
+    pub struct Square{pub p: Point, pub h: usize, pub w: usize}
 }
 
 mod bar {
@@ -55,7 +54,7 @@ mod bar {
     pub mod c {
         use foo::Point;
         use foo::Square; //~ ERROR unused import
-        pub fn cc(p: Point) -> int { return 2i * (p.x + p.y); }
+        pub fn cc(p: Point) -> isize { return 2 * (p.x + p.y); }
     }
 
     #[allow(unused_imports)]
@@ -66,8 +65,8 @@ mod bar {
 
 fn main() {
     cal(foo::Point{x:3, y:9});
-    let mut a = 3i;
-    let mut b = 4i;
+    let mut a = 3;
+    let mut b = 4;
     swap(&mut a, &mut b);
     test::C.b();
     let _a = foo();

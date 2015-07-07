@@ -11,8 +11,6 @@
 // Test that the lifetime of rvalues in for loops is extended
 // to the for loop itself.
 
-#![feature(macro_rules)]
-
 use std::ops::Drop;
 
 static mut FLAGS: u64 = 0;
@@ -63,7 +61,7 @@ impl Drop for AddFlags {
 pub fn main() {
     // The array containing [AddFlags] should not be dropped until
     // after the for loop:
-    for x in [AddFlags(1)].iter() {
+    for x in &[AddFlags(1)] {
         check_flags(0);
     }
     check_flags(1);

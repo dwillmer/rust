@@ -10,57 +10,52 @@
 
 // Microbenchmark for the smallintmap library
 
-extern crate collections;
-extern crate time;
-extern crate debug;
+#![feature(vecmap, duration, duration_span)]
 
-use std::collections::SmallIntMap;
-use std::os;
-use std::uint;
+use std::collections::VecMap;
+use std::env;
+use std::time::Duration;
 
-fn append_sequential(min: uint, max: uint, map: &mut SmallIntMap<uint>) {
-    for i in range(min, max) {
-        map.insert(i, i + 22u);
+fn append_sequential(min: usize, max: usize, map: &mut VecMap<usize>) {
+    for i in min..max {
+        map.insert(i, i + 22);
     }
 }
 
-fn check_sequential(min: uint, max: uint, map: &SmallIntMap<uint>) {
-    for i in range(min, max) {
-        assert_eq!(*map.get(&i), i + 22u);
+fn check_sequential(min: usize, max: usize, map: &VecMap<usize>) {
+    for i in min..max {
+        assert_eq!(map[i], i + 22);
     }
 }
 
 fn main() {
-    let args = os::args();
-    let args = if os::getenv("RUST_BENCH").is_some() {
+    let args = env::args();
+    let args = if env::var_os("RUST_BENCH").is_some() {
         vec!("".to_string(), "100000".to_string(), "100".to_string())
-    } else if args.len() <= 1u {
+    } else if args.len() <= 1 {
         vec!("".to_string(), "10000".to_string(), "50".to_string())
     } else {
-        args.move_iter().collect()
+        args.collect()
     };
-    let max = from_str::<uint>(args.get(1).as_slice()).unwrap();
-    let rep = from_str::<uint>(args.get(2).as_slice()).unwrap();
+    let max = args[1].parse::<usize>().unwrap();
+    let rep = args[2].parse::<usize>().unwrap();
 
-    let mut checkf = 0.0;
-    let mut appendf = 0.0;
+    let mut checkf = Duration::new(0, 0);
+    let mut appendf = Duration::new(0, 0);
 
-    for _ in range(0u, rep) {
-        let mut map = SmallIntMap::new();
-        let start = time::precise_time_s();
-        append_sequential(0u, max, &mut map);
-        let mid = time::precise_time_s();
-        check_sequential(0u, max, &map);
-        let end = time::precise_time_s();
+    for _ in 0..rep {
+        let mut map = VecMap::new();
+        let d1 = Duration::span(|| append_sequential(0, max, &mut map));
+        let d2 = Duration::span(|| check_sequential(0, max, &map));
 
-        checkf += (end - mid) as f64;
-        appendf += (mid - start) as f64;
+        checkf = checkf + d2;
+        appendf = appendf + d1;
     }
 
     let maxf = max as f64;
 
-    println!("insert(): {:?} seconds\n", checkf);
-    println!("        : {} op/sec\n", maxf/checkf);
-    println!("get()   : {:?} seconds\n", appendf);
-    println!("        : {} op/sec\n", maxf/appendf);
+    println!("insert(): {} seconds\n", checkf);
+    println!("        : {} op/s\n", maxf / checkf.secs() as f64);
+    println!("get()   : {} seconds\n", appendf);
+    println!("        : {} op/s\n", maxf / appendf.secs() as f64);
 }

@@ -9,16 +9,17 @@
 // except according to those terms.
 
 
-use std::gc::GC;
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
-struct Point {x: int, y: int}
+struct Point {x: isize, y: isize}
 
-fn x_coord(p: &Point) -> &int {
+fn x_coord(p: &Point) -> &isize {
     return &p.x;
 }
 
 pub fn main() {
-    let p = box(GC) Point {x: 3, y: 4};
+    let p: Box<_> = box Point {x: 3, y: 4};
     let xc = x_coord(&*p);
     assert_eq!(*xc, 3);
 }

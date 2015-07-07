@@ -8,28 +8,30 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::{int, i8, i16, i32, i64};
-use std::task;
+#![feature(zero_one)]
+
+use std::num::Zero;
+use std::thread;
 
 fn main() {
-    assert!(task::try(proc() int::MIN / -1).is_err());
-    assert!(task::try(proc() i8::MIN / -1).is_err());
-    assert!(task::try(proc() i16::MIN / -1).is_err());
-    assert!(task::try(proc() i32::MIN / -1).is_err());
-    assert!(task::try(proc() i64::MIN / -1).is_err());
-    assert!(task::try(proc() 1i / 0).is_err());
-    assert!(task::try(proc() 1i8 / 0).is_err());
-    assert!(task::try(proc() 1i16 / 0).is_err());
-    assert!(task::try(proc() 1i32 / 0).is_err());
-    assert!(task::try(proc() 1i64 / 0).is_err());
-    assert!(task::try(proc() int::MIN % -1).is_err());
-    assert!(task::try(proc() i8::MIN % -1).is_err());
-    assert!(task::try(proc() i16::MIN % -1).is_err());
-    assert!(task::try(proc() i32::MIN % -1).is_err());
-    assert!(task::try(proc() i64::MIN % -1).is_err());
-    assert!(task::try(proc() 1i % 0).is_err());
-    assert!(task::try(proc() 1i8 % 0).is_err());
-    assert!(task::try(proc() 1i16 % 0).is_err());
-    assert!(task::try(proc() 1i32 % 0).is_err());
-    assert!(task::try(proc() 1i64 % 0).is_err());
+    assert!(thread::spawn(move|| { isize::min_value() / -1; }).join().is_err());
+    assert!(thread::spawn(move|| { i8::min_value() / -1; }).join().is_err());
+    assert!(thread::spawn(move|| { i16::min_value() / -1; }).join().is_err());
+    assert!(thread::spawn(move|| { i32::min_value() / -1; }).join().is_err());
+    assert!(thread::spawn(move|| { i64::min_value() / -1; }).join().is_err());
+    assert!(thread::spawn(move|| { 1isize / isize::zero(); }).join().is_err());
+    assert!(thread::spawn(move|| { 1i8 / i8::zero(); }).join().is_err());
+    assert!(thread::spawn(move|| { 1i16 / i16::zero(); }).join().is_err());
+    assert!(thread::spawn(move|| { 1i32 / i32::zero(); }).join().is_err());
+    assert!(thread::spawn(move|| { 1i64 / i64::zero(); }).join().is_err());
+    assert!(thread::spawn(move|| { isize::min_value() % -1; }).join().is_err());
+    assert!(thread::spawn(move|| { i8::min_value() % -1; }).join().is_err());
+    assert!(thread::spawn(move|| { i16::min_value() % -1; }).join().is_err());
+    assert!(thread::spawn(move|| { i32::min_value() % -1; }).join().is_err());
+    assert!(thread::spawn(move|| { i64::min_value() % -1; }).join().is_err());
+    assert!(thread::spawn(move|| { 1isize % isize::zero(); }).join().is_err());
+    assert!(thread::spawn(move|| { 1i8 % i8::zero(); }).join().is_err());
+    assert!(thread::spawn(move|| { 1i16 % i16::zero(); }).join().is_err());
+    assert!(thread::spawn(move|| { 1i32 % i32::zero(); }).join().is_err());
+    assert!(thread::spawn(move|| { 1i64 % i64::zero(); }).join().is_err());
 }

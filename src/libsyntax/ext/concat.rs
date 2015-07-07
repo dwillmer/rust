@@ -25,30 +25,29 @@ pub fn expand_syntax_ext(cx: &mut base::ExtCtxt,
         None => return base::DummyResult::expr(sp)
     };
     let mut accumulator = String::new();
-    for e in es.move_iter() {
+    for e in es {
         match e.node {
-            ast::ExprLit(lit) => {
+            ast::ExprLit(ref lit) => {
                 match lit.node {
                     ast::LitStr(ref s, _) |
                     ast::LitFloat(ref s, _) |
                     ast::LitFloatUnsuffixed(ref s) => {
-                        accumulator.push_str(s.get());
+                        accumulator.push_str(&s);
                     }
                     ast::LitChar(c) => {
-                        accumulator.push_char(c);
+                        accumulator.push(c);
                     }
                     ast::LitInt(i, ast::UnsignedIntLit(_)) |
                     ast::LitInt(i, ast::SignedIntLit(_, ast::Plus)) |
                     ast::LitInt(i, ast::UnsuffixedIntLit(ast::Plus)) => {
-                        accumulator.push_str(format!("{}", i).as_slice());
+                        accumulator.push_str(&format!("{}", i));
                     }
                     ast::LitInt(i, ast::SignedIntLit(_, ast::Minus)) |
                     ast::LitInt(i, ast::UnsuffixedIntLit(ast::Minus)) => {
-                        accumulator.push_str(format!("-{}", i).as_slice());
+                        accumulator.push_str(&format!("-{}", i));
                     }
-                    ast::LitNil => {}
                     ast::LitBool(b) => {
-                        accumulator.push_str(format!("{}", b).as_slice());
+                        accumulator.push_str(&format!("{}", b));
                     }
                     ast::LitByte(..) |
                     ast::LitBinary(..) => {
@@ -61,7 +60,7 @@ pub fn expand_syntax_ext(cx: &mut base::ExtCtxt,
             }
         }
     }
-    base::MacExpr::new(cx.expr_str(
+    base::MacEager::expr(cx.expr_str(
             sp,
-            token::intern_and_get_ident(accumulator.as_slice())))
+            token::intern_and_get_ident(&accumulator[..])))
 }

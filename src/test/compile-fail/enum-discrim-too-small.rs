@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(negate_unsigned)]
+
 #[repr(u8)] //~ NOTE discriminant type specified here
 enum Eu8 {
     Au8 = 23,
@@ -53,6 +55,6 @@ enum Ei32 {
 // u64 currently allows negative numbers, and i64 allows numbers greater than `1<<63`.  This is a
 // little counterintuitive, but since the discriminant can store all the bits, and extracting it
 // with a cast requires specifying the signedness, there is no loss of information in those cases.
-// This also applies to int and uint on 64-bit targets.
+// This also applies to isize and usize on 64-bit targets.
 
 pub fn main() { }

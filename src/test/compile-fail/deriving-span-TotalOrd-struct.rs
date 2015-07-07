@@ -10,13 +10,12 @@
 
 // This file was auto-generated using 'src/etc/generate-deriving-span-tests.py'
 
-#![feature(struct_variant)]
 extern crate rand;
 
-#[deriving(Eq,PartialOrd,PartialEq)]
+#[derive(Eq,PartialOrd,PartialEq)]
 struct Error;
 
-#[deriving(Ord,Eq,PartialOrd,PartialEq)]
+#[derive(Ord,Eq,PartialOrd,PartialEq)]
 struct Struct {
     x: Error //~ ERROR
 }

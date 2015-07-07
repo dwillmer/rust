@@ -9,10 +9,14 @@
 // except according to those terms.
 
 // aux-build:issue13507.rs
+
+
+#![feature(core)]
+
 extern crate issue13507;
 use issue13507::testtypes;
 
-use std::intrinsics::TypeId;
+use std::any::TypeId;
 
 pub fn type_ids() -> Vec<TypeId> {
     let mut ids = vec!();
@@ -24,7 +28,6 @@ pub fn type_ids() -> Vec<TypeId> {
     ids.push(TypeId::of::<testtypes::FooEnum>());
     ids.push(TypeId::of::<testtypes::FooUniq>());
     ids.push(TypeId::of::<testtypes::FooPtr>());
-    ids.push(TypeId::of::<testtypes::FooClosure>());
     ids.push(TypeId::of::<&'static testtypes::FooTrait>());
     ids.push(TypeId::of::<testtypes::FooStruct>());
     ids.push(TypeId::of::<testtypes::FooTuple>());

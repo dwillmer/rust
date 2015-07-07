@@ -8,8 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![no_std]
-
 // Check that explicit region bounds are allowed on the various
 // nominal types (but not on other types) and that they are type
 // checked.
@@ -20,8 +18,8 @@ impl Foo {
     fn some_method<A:'static>(self) { }
 }
 
-fn caller<'a>(x: &int) {
-    Foo.some_method::<&'a int>();
+fn caller<'a>(x: &isize) {
+    Foo.some_method::<&'a isize>();
     //~^ ERROR does not fulfill the required lifetime
 }
 

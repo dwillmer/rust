@@ -14,17 +14,30 @@
 
 extern crate libc;
 
-use std::io::IoResult;
+use std::io;
+use std::io::prelude::*;
 
 use attr;
 use color;
-use Terminal;
+use {Terminal,UnwrappableTerminal};
 
 /// A Terminal implementation which uses the Win32 Console API.
 pub struct WinConsole<T> {
     buf: T,
+    def_foreground: color::Color,
+    def_background: color::Color,
     foreground: color::Color,
     background: color::Color,
+}
+
+#[allow(non_snake_case)]
+#[repr(C)]
+struct CONSOLE_SCREEN_BUFFER_INFO {
+    dwSize: [libc::c_short; 2],
+    dwCursorPosition: [libc::c_short; 2],
+    wAttributes: libc::WORD,
+    srWindow: [libc::c_short; 4],
+    dwMaximumWindowSize: [libc::c_short; 2],
 }
 
 #[allow(non_snake_case)]
@@ -32,6 +45,8 @@ pub struct WinConsole<T> {
 extern "system" {
     fn SetConsoleTextAttribute(handle: libc::HANDLE, attr: libc::WORD) -> libc::BOOL;
     fn GetStdHandle(which: libc::DWORD) -> libc::HANDLE;
+    fn GetConsoleScreenBufferInfo(handle: libc::HANDLE,
+                                  info: *mut CONSOLE_SCREEN_BUFFER_INFO) -> libc::BOOL;
 }
 
 fn color_to_bits(color: color::Color) -> u16 {
@@ -56,7 +71,23 @@ fn color_to_bits(color: color::Color) -> u16 {
     }
 }
 
-impl<T: Writer> WinConsole<T> {
+fn bits_to_color(bits: u16) -> color::Color {
+    let color = match bits & 0x7 {
+        0 => color::BLACK,
+        0x1 => color::BLUE,
+        0x2 => color::GREEN,
+        0x4 => color::RED,
+        0x6 => color::YELLOW,
+        0x5 => color::MAGENTA,
+        0x3 => color::CYAN,
+        0x7 => color::WHITE,
+        _ => unreachable!()
+    };
+
+    color | (bits & 0x8) // copy the hi-intensity bit
+}
+
+impl<T: Write+Send+'static> WinConsole<T> {
     fn apply(&mut self) {
         let _unused = self.buf.flush();
         let mut accum: libc::WORD = 0;
@@ -73,42 +104,59 @@ impl<T: Writer> WinConsole<T> {
             // terminal! Admittedly, this is fragile, since stderr could be
             // redirected to a different console. This is good enough for
             // rustc though. See #13400.
-            let out = GetStdHandle(-11);
+            let out = GetStdHandle(-11i32 as libc::DWORD);
             SetConsoleTextAttribute(out, accum);
         }
     }
+
+    /// Returns `None` whenever the terminal cannot be created for some
+    /// reason.
+    pub fn new(out: T) -> Option<Box<Terminal<T>+Send+'static>> {
+        let fg;
+        let bg;
+        unsafe {
+            let mut buffer_info = ::std::mem::uninitialized();
+            if GetConsoleScreenBufferInfo(GetStdHandle(-11i32 as libc::DWORD),
+                                          &mut buffer_info) != 0 {
+                fg = bits_to_color(buffer_info.wAttributes);
+                bg = bits_to_color(buffer_info.wAttributes >> 4);
+            } else {
+                fg = color::WHITE;
+                bg = color::BLACK;
+            }
+        }
+        Some(box WinConsole { buf: out,
+                              def_foreground: fg, def_background: bg,
+                              foreground: fg, background: bg })
+    }
 }
 
-impl<T: Writer> Writer for WinConsole<T> {
-    fn write(&mut self, buf: &[u8]) -> IoResult<()> {
+impl<T: Write> Write for WinConsole<T> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.buf.write(buf)
     }
 
-    fn flush(&mut self) -> IoResult<()> {
+    fn flush(&mut self) -> io::Result<()> {
         self.buf.flush()
     }
 }
 
-impl<T: Writer> Terminal<T> for WinConsole<T> {
-    fn new(out: T) -> Option<WinConsole<T>> {
-        Some(WinConsole { buf: out, foreground: color::WHITE, background: color::BLACK })
-    }
-
-    fn fg(&mut self, color: color::Color) -> IoResult<bool> {
+impl<T: Write+Send+'static> Terminal<T> for WinConsole<T> {
+    fn fg(&mut self, color: color::Color) -> io::Result<bool> {
         self.foreground = color;
         self.apply();
 
         Ok(true)
     }
 
-    fn bg(&mut self, color: color::Color) -> IoResult<bool> {
+    fn bg(&mut self, color: color::Color) -> io::Result<bool> {
         self.background = color;
         self.apply();
 
         Ok(true)
     }
 
-    fn attr(&mut self, attr: attr::Attr) -> IoResult<bool> {
+    fn attr(&mut self, attr: attr::Attr) -> io::Result<bool> {
         match attr {
             attr::ForegroundColor(f) => {
                 self.foreground = f;
@@ -133,17 +181,19 @@ impl<T: Writer> Terminal<T> for WinConsole<T> {
         }
     }
 
-    fn reset(&mut self) -> IoResult<()> {
-        self.foreground = color::WHITE;
-        self.background = color::BLACK;
+    fn reset(&mut self) -> io::Result<()> {
+        self.foreground = self.def_foreground;
+        self.background = self.def_background;
         self.apply();
 
         Ok(())
     }
 
-    fn unwrap(self) -> T { self.buf }
-
     fn get_ref<'a>(&'a self) -> &'a T { &self.buf }
 
     fn get_mut<'a>(&'a mut self) -> &'a mut T { &mut self.buf }
+}
+
+impl<T: Write+Send+'static> UnwrappableTerminal<T> for WinConsole<T> {
+    fn unwrap(self) -> T { self.buf }
 }

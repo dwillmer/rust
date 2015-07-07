@@ -8,17 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
 
 // STRUCT
-// gdb-command:finish
 // gdb-command:print arg1
 // gdb-check:$1 = 1
 // gdb-command:print arg2
@@ -26,7 +24,6 @@
 // gdb-command:continue
 
 // ENUM
-// gdb-command:finish
 // gdb-command:print arg1
 // gdb-check:$3 = -3
 // gdb-command:print arg2
@@ -56,29 +53,29 @@
 // lldb-check:[...]$4 = 5
 // lldb-command:continue
 
-#![feature(struct_variant)]
+#![omit_gdb_pretty_printer_section]
 
 struct Struct {
-    x: int
+    x: isize
 }
 
 impl Struct {
 
-    fn static_method(arg1: int, arg2: int) -> int {
+    fn static_method(arg1: isize, arg2: isize) -> isize {
         zzz(); // #break
         arg1 + arg2
     }
 }
 
 enum Enum {
-    Variant1 { x: int },
+    Variant1 { x: isize },
     Variant2,
-    Variant3(f64, int, char),
+    Variant3(f64, isize, char),
 }
 
 impl Enum {
 
-    fn static_method(arg1: int, arg2: f64, arg3: uint) -> int {
+    fn static_method(arg1: isize, arg2: f64, arg3: usize) -> isize {
         zzz(); // #break
         arg1
     }

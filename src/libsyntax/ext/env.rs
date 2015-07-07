@@ -21,7 +21,7 @@ use ext::base;
 use ext::build::AstBuilder;
 use parse::token;
 
-use std::os;
+use std::env;
 
 pub fn expand_option_env<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                               -> Box<base::MacResult+'cx> {
@@ -30,12 +30,13 @@ pub fn expand_option_env<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenT
         Some(v) => v
     };
 
-    let e = match os::getenv(var.as_slice()) {
-      None => {
+    let e = match env::var(&var[..]) {
+      Err(..) => {
           cx.expr_path(cx.path_all(sp,
                                    true,
-                                   vec!(cx.ident_of("std"),
+                                   vec!(cx.ident_of_std("core"),
                                         cx.ident_of("option"),
+                                        cx.ident_of("Option"),
                                         cx.ident_of("None")),
                                    Vec::new(),
                                    vec!(cx.ty_rptr(sp,
@@ -44,62 +45,68 @@ pub fn expand_option_env<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenT
                                                    Some(cx.lifetime(sp,
                                                         cx.ident_of(
                                                             "'static").name)),
-                                                   ast::MutImmutable))))
+                                                   ast::MutImmutable)),
+                                   Vec::new()))
       }
-      Some(s) => {
+      Ok(s) => {
           cx.expr_call_global(sp,
-                              vec!(cx.ident_of("std"),
+                              vec!(cx.ident_of_std("core"),
                                    cx.ident_of("option"),
+                                   cx.ident_of("Option"),
                                    cx.ident_of("Some")),
                               vec!(cx.expr_str(sp,
                                                token::intern_and_get_ident(
-                                          s.as_slice()))))
+                                          &s[..]))))
       }
     };
-    MacExpr::new(e)
+    MacEager::expr(e)
 }
 
 pub fn expand_env<'cx>(cx: &'cx mut ExtCtxt, sp: Span, tts: &[ast::TokenTree])
                        -> Box<base::MacResult+'cx> {
-    let exprs = match get_exprs_from_tts(cx, sp, tts) {
-        Some(ref exprs) if exprs.len() == 0 => {
+    let mut exprs = match get_exprs_from_tts(cx, sp, tts) {
+        Some(ref exprs) if exprs.is_empty() => {
             cx.span_err(sp, "env! takes 1 or 2 arguments");
             return DummyResult::expr(sp);
         }
         None => return DummyResult::expr(sp),
-        Some(exprs) => exprs
+        Some(exprs) => exprs.into_iter()
     };
 
     let var = match expr_to_string(cx,
-                                *exprs.get(0),
+                                exprs.next().unwrap(),
                                 "expected string literal") {
         None => return DummyResult::expr(sp),
         Some((v, _style)) => v
     };
-    let msg = match exprs.len() {
-        1 => {
-            token::intern_and_get_ident(format!("environment variable `{}` \
+    let msg = match exprs.next() {
+        None => {
+            token::intern_and_get_ident(&format!("environment variable `{}` \
                                                  not defined",
-                                                var).as_slice())
+                                                var))
         }
-        2 => {
-            match expr_to_string(cx, *exprs.get(1), "expected string literal") {
+        Some(second) => {
+            match expr_to_string(cx, second, "expected string literal") {
                 None => return DummyResult::expr(sp),
                 Some((s, _style)) => s
             }
         }
-        _ => {
+    };
+
+    match exprs.next() {
+        None => {}
+        Some(_) => {
             cx.span_err(sp, "env! takes 1 or 2 arguments");
             return DummyResult::expr(sp);
         }
-    };
+    }
 
-    let e = match os::getenv(var.get()) {
-        None => {
-            cx.span_err(sp, msg.get());
-            cx.expr_uint(sp, 0)
+    let e = match env::var(&var[..]) {
+        Err(_) => {
+            cx.span_err(sp, &msg);
+            cx.expr_usize(sp, 0)
         }
-        Some(s) => cx.expr_str(sp, token::intern_and_get_ident(s.as_slice()))
+        Ok(s) => cx.expr_str(sp, token::intern_and_get_ident(&s))
     };
-    MacExpr::new(e)
+    MacEager::expr(e)
 }

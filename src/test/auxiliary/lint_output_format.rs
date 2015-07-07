@@ -8,20 +8,24 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_id="lint_output_format#0.1"]
+#![crate_name="lint_output_format"]
 #![crate_type = "lib"]
+#![feature(staged_api)]
+#![staged_api]
+#![unstable(feature = "test_feature")]
 
-#[deprecated]
-pub fn foo() -> uint {
+#[stable(feature = "test_feature", since = "1.0.0")]
+#[deprecated(since = "1.0.0")]
+pub fn foo() -> usize {
     20
 }
 
-#[experimental]
-pub fn bar() -> uint {
+#[unstable(feature = "test_feature")]
+pub fn bar() -> usize {
     40
 }
 
-#[unstable]
-pub fn baz() -> uint {
+#[unstable(feature = "test_feature")]
+pub fn baz() -> usize {
     30
 }

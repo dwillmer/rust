@@ -8,11 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(globs, lang_items)]
+#![feature(lang_items, start, no_std)]
 #![no_std] // makes debugging this test *a lot* easier (during resolve)
 
 #[lang="sized"]
 pub trait Sized {}
+
+#[lang="copy"]
+pub trait Copy {}
 
 mod bar {
     // shouldn't bring in too much
@@ -20,10 +23,6 @@ mod bar {
 
     // can't publicly re-export private items
     pub use self::baz::{foo, bar};
-    //~^ ERROR: function `bar` is private
-
-    pub use self::private::ppriv;
-    //~^ ERROR: function `ppriv` is private
 
     pub struct A;
     impl A {
@@ -38,7 +37,7 @@ mod bar {
         fn foo() -> Self;
     }
 
-    impl B for int { fn foo() -> int { 3 } }
+    impl B for isize { fn foo() -> isize { 3 } }
 
     pub enum Enum {
         Pub
@@ -54,10 +53,8 @@ mod bar {
             fn bar2(&self) {}
         }
 
-        // both of these are re-exported by `bar`, but only one should be
-        // validly re-exported
         pub fn foo() {}
-        fn bar() {}
+        pub fn bar() {}
     }
 
     extern {
@@ -66,7 +63,7 @@ mod bar {
     }
 
     fn test() {
-        self::Pub;
+        self::Enum::Pub;
         unsafe {
             epriv();
             epub();
@@ -84,10 +81,6 @@ mod bar {
     mod glob {
         pub fn gpub() {}
         fn gpriv() {}
-    }
-
-    mod private {
-        fn ppriv() {}
     }
 }
 
@@ -116,12 +109,12 @@ mod foo {
                                 //~^ ERROR: method `bar2` is private
                                 //~^^ NOTE: module `baz` is private
 
-        let _: int =
+        let _: isize =
         ::bar::B::foo();        //~ ERROR: method `foo` is inaccessible
                                 //~^ NOTE: trait `B` is private
         ::lol();
 
-        ::bar::Pub;
+        ::bar::Enum::Pub;
 
         unsafe {
             ::bar::epriv(); //~ ERROR: function `epriv` is private
@@ -135,13 +128,13 @@ mod foo {
 
         ::bar::baz::foo(); //~ ERROR: function `foo` is inaccessible
                            //~^ NOTE: module `baz` is private
-        ::bar::baz::bar(); //~ ERROR: function `bar` is private
+        ::bar::baz::bar(); //~ ERROR: function `bar` is inaccessible
     }
 
     fn test2() {
         use bar::baz::{foo, bar};
         //~^ ERROR: function `foo` is inaccessible
-        //~^^ ERROR: function `bar` is private
+        //~^^ ERROR: function `bar` is inaccessible
         foo();
         bar();
     }
@@ -183,4 +176,4 @@ pub mod mytest {
     }
 }
 
-#[start] fn main(_: int, _: *const *const u8) -> int { 3 }
+#[start] fn main(_: isize, _: *const *const u8) -> isize { 3 }

@@ -9,9 +9,11 @@
 // except according to those terms.
 
 
-#![forbid(non_camel_case_types)]
-#![forbid(non_uppercase_statics)]
+// pretty-expanded FIXME #23616
 
-static mut bar: int = 2;
+#![forbid(non_camel_case_types)]
+#![forbid(non_upper_case_globals)]
+
+static mut bar: isize = 2;
 
 pub fn main() {}

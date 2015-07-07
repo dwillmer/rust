@@ -8,82 +8,155 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-/*! Runtime services, including the task scheduler and I/O dispatcher
+//! Runtime services
+//!
+//! The `rt` module provides a narrow set of runtime services,
+//! including the global heap (exported in `heap`) and unwinding and
+//! backtrace support. The APIs in this module are highly unstable,
+//! and should be considered as private implementation details for the
+//! time being.
 
-The `rt` module provides the private runtime infrastructure necessary
-to support core language features like the exchange and local heap,
-the garbage collector, logging, local data and unwinding. It also
-implements the default task scheduler and task model. Initialization
-routines are provided for setting up runtime resources in common
-configurations, including that used by `rustc` when generating
-executables.
+#![unstable(feature = "rt",
+            reason = "this public module should not exist and is highly likely \
+                      to disappear")]
+#![allow(missing_docs)]
 
-It is intended that the features provided by `rt` can be factored in a
-way such that the core library can be built with different 'profiles'
-for different use cases, e.g. excluding the task scheduler. A number
-of runtime features though are critical to the functioning of the
-language and an implementation must be provided regardless of the
-execution environment.
-
-Of foremost importance is the global exchange heap, in the module
-`heap`. Very little practical Rust code can be written without
-access to the global heap. Unlike most of `rt` the global heap is
-truly a global resource and generally operates independently of the
-rest of the runtime.
-
-All other runtime features are task-local, including the local heap,
-the garbage collector, local storage, logging and the stack unwinder.
-
-The relationship between `rt` and the rest of the core library is
-not entirely clear yet and some modules will be moving into or
-out of `rt` as development proceeds.
-
-Several modules in `core` are clients of `rt`:
-
-* `std::task` - The user-facing interface to the Rust task model.
-* `std::local_data` - The interface to local data.
-* `std::gc` - The garbage collector.
-* `std::unstable::lang` - Miscellaneous lang items, some of which rely on `std::rt`.
-* `std::cleanup` - Local heap destruction.
-* `std::io` - In the future `std::io` will use an `rt` implementation.
-* `std::logging`
-* `std::comm`
-
-*/
-
-#![experimental]
-
-// FIXME: this should not be here.
-#![allow(missing_doc)]
-
-use failure;
-use rustrt;
+use prelude::v1::*;
+use sys;
+use usize;
 
 // Reexport some of our utilities which are expected by other crates.
-pub use self::util::{default_sched_threads, min_stack, running_on_valgrind};
+pub use self::util::{min_stack, running_on_valgrind};
+pub use self::unwind::{begin_unwind, begin_unwind_fmt};
 
-// Reexport functionality from librustrt and other crates underneath the
-// standard library which work together to create the entire runtime.
-pub use alloc::{heap, libc_heap};
-pub use rustrt::{task, local, mutex, exclusive, stack, args, rtio, thread};
-pub use rustrt::{Stdio, Stdout, Stderr, begin_unwind, begin_unwind_fmt};
-pub use rustrt::{bookkeeping, at_exit, unwind, DEFAULT_ERROR_CODE, Runtime};
+// Reexport some functionality from liballoc.
+pub use alloc::heap;
 
-// Simple backtrace functionality (to print on failure)
+// Simple backtrace functionality (to print on panic)
 pub mod backtrace;
 
-// Just stuff
-mod util;
+// Internals
+#[macro_use]
+mod macros;
 
-/// One-time runtime initialization.
+// These should be refactored/moved/made private over time
+pub mod util;
+pub mod unwind;
+pub mod args;
+
+mod at_exit_imp;
+mod libunwind;
+
+/// The default error code of the rust runtime if the main thread panics instead
+/// of exiting cleanly.
+pub const DEFAULT_ERROR_CODE: isize = 101;
+
+#[cfg(any(windows, android))]
+const OS_DEFAULT_STACK_ESTIMATE: usize = 1 << 20;
+#[cfg(all(unix, not(android)))]
+const OS_DEFAULT_STACK_ESTIMATE: usize = 2 * (1 << 20);
+
+#[cfg(not(test))]
+#[lang = "start"]
+fn lang_start(main: *const u8, argc: isize, argv: *const *const u8) -> isize {
+    use prelude::v1::*;
+
+    use mem;
+    use env;
+    use rt;
+    use sys_common::thread_info::{self, NewThread};
+    use sys_common;
+    use thread::Thread;
+
+    let something_around_the_top_of_the_stack = 1;
+    let addr = &something_around_the_top_of_the_stack as *const _ as *const isize;
+    let my_stack_top = addr as usize;
+
+    // FIXME #11359 we just assume that this thread has a stack of a
+    // certain size, and estimate that there's at most 20KB of stack
+    // frames above our current position.
+    const TWENTY_KB: usize = 20000;
+
+    // saturating-add to sidestep overflow
+    let top_plus_spill = if usize::MAX - TWENTY_KB < my_stack_top {
+        usize::MAX
+    } else {
+        my_stack_top + TWENTY_KB
+    };
+    // saturating-sub to sidestep underflow
+    let my_stack_bottom = if top_plus_spill < OS_DEFAULT_STACK_ESTIMATE {
+        0
+    } else {
+        top_plus_spill - OS_DEFAULT_STACK_ESTIMATE
+    };
+
+    let failed = unsafe {
+        // First, make sure we don't trigger any __morestack overflow checks,
+        // and next set up our stack to have a guard page and run through our
+        // own fault handlers if we hit it.
+        sys_common::stack::record_os_managed_stack_bounds(my_stack_bottom,
+                                                          my_stack_top);
+        sys::thread::guard::init();
+        sys::stack_overflow::init();
+
+        // Next, set up the current Thread with the guard information we just
+        // created. Note that this isn't necessary in general for new threads,
+        // but we just do this to name the main thread and to give it correct
+        // info about the stack bounds.
+        let thread: Thread = NewThread::new(Some("<main>".to_string()));
+        thread_info::set(sys::thread::guard::main(), thread);
+
+        // By default, some platforms will send a *signal* when a EPIPE error
+        // would otherwise be delivered. This runtime doesn't install a SIGPIPE
+        // handler, causing it to kill the program, which isn't exactly what we
+        // want!
+        //
+        // Hence, we set SIGPIPE to ignore when the program starts up in order
+        // to prevent this problem.
+        #[cfg(windows)] fn ignore_sigpipe() {}
+        #[cfg(unix)] fn ignore_sigpipe() {
+            use libc;
+            use libc::funcs::posix01::signal::signal;
+            unsafe {
+                assert!(signal(libc::SIGPIPE, libc::SIG_IGN) != !0);
+            }
+        }
+        ignore_sigpipe();
+
+        // Store our args if necessary in a squirreled away location
+        args::init(argc, argv);
+
+        // And finally, let's run some code!
+        let res = unwind::try(|| {
+            let main: fn() = mem::transmute(main);
+            main();
+        });
+        cleanup();
+        res.is_err()
+    };
+
+    // If the exit code wasn't set, then the try block must have panicked.
+    if failed {
+        rt::DEFAULT_ERROR_CODE
+    } else {
+        #[allow(deprecated)]
+        fn exit_status() -> isize { env::get_exit_status() as isize }
+        exit_status()
+    }
+}
+
+/// Enqueues a procedure to run when the main thread exits.
 ///
-/// Initializes global state, including frobbing
-/// the crate's logging flags, registering GC
-/// metadata, and storing the process arguments.
-#[allow(experimental)]
-pub fn init(argc: int, argv: *const *const u8) {
-    rustrt::init(argc, argv);
-    unsafe { unwind::register(failure::on_fail); }
+/// Currently these closures are only run once the main *Rust* thread exits.
+/// Once the `at_exit` handlers begin running, more may be enqueued, but not
+/// infinitely so. Eventually a handler registration will be forced to fail.
+///
+/// Returns `Ok` if the handler was successfully registered, meaning that the
+/// closure will be run once the main thread exits. Returns `Err` to indicate
+/// that the closure could not be registered, meaning that it is not scheduled
+/// to be rune.
+pub fn at_exit<F: FnOnce() + Send + 'static>(f: F) -> Result<(), ()> {
+    if at_exit_imp::push(Box::new(f)) {Ok(())} else {Err(())}
 }
 
 /// One-time runtime cleanup.
@@ -96,5 +169,7 @@ pub fn init(argc: int, argv: *const *const u8) {
 /// Invoking cleanup while portions of the runtime are still in use may cause
 /// undefined behavior.
 pub unsafe fn cleanup() {
-    rustrt::cleanup();
+    args::cleanup();
+    sys::stack_overflow::cleanup();
+    at_exit_imp::cleanup();
 }

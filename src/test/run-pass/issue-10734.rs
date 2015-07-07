@@ -8,7 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-static mut drop_count: uint = 0;
+
+#![feature(unsafe_no_drop_flag)]
+
+static mut drop_count: usize = 0;
 
 #[unsafe_no_drop_flag]
 struct Foo {
@@ -31,14 +34,14 @@ pub fn main() {
         let _a = Foo{ dropped: false };
     }
     // Check that we dropped already (as expected from a `{ expr }`).
-    unsafe { assert!(drop_count == 1); }
+    unsafe { assert_eq!(drop_count, 1); }
 
     // An `if false {} else { expr }` statement should compile the same as `{ expr }`.
     if false {
-        fail!();
+        panic!();
     } else {
         let _a = Foo{ dropped: false };
     }
     // Check that we dropped already (as expected from a `{ expr }`).
-    unsafe { assert!(drop_count == 2); }
+    unsafe { assert_eq!(drop_count, 2); }
 }

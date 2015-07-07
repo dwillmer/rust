@@ -14,13 +14,14 @@ trait Iterator<A> {
     fn next(&mut self) -> Option<A>;
 }
 
-trait IteratorUtil<A> {
+trait IteratorUtil<A>
+{
     fn zip<B, U: Iterator<U>>(self, other: U) -> ZipIterator<Self, U>;
 }
 
 impl<A, T: Iterator<A>> IteratorUtil<A> for T {
     fn zip<B, U: Iterator<B>>(self, other: U) -> ZipIterator<T, U> {
-    //~^ ERROR in method `zip`, type parameter 1 requires bound `Iterator<B>`
+    //~^ ERROR the requirement `U : Iterator<B>` appears on the impl method
         ZipIterator{a: self, b: other}
     }
 }
@@ -30,4 +31,3 @@ struct ZipIterator<T, U> {
 }
 
 fn main() {}
-

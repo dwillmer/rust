@@ -11,12 +11,13 @@
 // Ensures that destructors are run for expressions of the form "let _ = e;"
 // where `e` is a type which requires a destructor.
 
-struct Foo;
-struct Bar { x: int }
-struct Baz(int);
-enum FooBar { _Foo(Foo), _Bar(uint) }
 
-static mut NUM_DROPS: uint = 0;
+struct Foo;
+struct Bar { x: isize }
+struct Baz(isize);
+enum FooBar { _Foo(Foo), _Bar(usize) }
+
+static mut NUM_DROPS: usize = 0;
 
 impl Drop for Foo {
     fn drop(&mut self) {
@@ -47,9 +48,9 @@ fn main() {
     assert_eq!(unsafe { NUM_DROPS }, 2);
     { let _x = Baz(21); }
     assert_eq!(unsafe { NUM_DROPS }, 3);
-    { let _x = _Foo(Foo); }
+    { let _x = FooBar::_Foo(Foo); }
     assert_eq!(unsafe { NUM_DROPS }, 5);
-    { let _x = _Bar(42u); }
+    { let _x = FooBar::_Bar(42); }
     assert_eq!(unsafe { NUM_DROPS }, 6);
 
     { let _ = Foo; }
@@ -58,8 +59,8 @@ fn main() {
     assert_eq!(unsafe { NUM_DROPS }, 8);
     { let _ = Baz(21); }
     assert_eq!(unsafe { NUM_DROPS }, 9);
-    { let _ = _Foo(Foo); }
+    { let _ = FooBar::_Foo(Foo); }
     assert_eq!(unsafe { NUM_DROPS }, 11);
-    { let _ = _Bar(42u); }
+    { let _ = FooBar::_Bar(42); }
     assert_eq!(unsafe { NUM_DROPS }, 12);
 }

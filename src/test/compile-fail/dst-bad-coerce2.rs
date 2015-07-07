@@ -10,7 +10,7 @@
 
 // Attempt to change the mutability as well as unsizing.
 
-struct Fat<Sized? T> {
+struct Fat<T: ?Sized> {
     ptr: T
 }
 
@@ -21,11 +21,11 @@ impl Bar for Foo {}
 pub fn main() {
     // With a vec of ints.
     let f1 = Fat { ptr: [1, 2, 3] };
-    let f2: &Fat<[int, ..3]> = &f1;
-    let f3: &mut Fat<[int]> = f2; //~ ERROR cannot borrow immutable dereference
+    let f2: &Fat<[isize; 3]> = &f1;
+    let f3: &mut Fat<[isize]> = f2; //~ ERROR mismatched types
 
     // With a trait.
     let f1 = Fat { ptr: Foo };
     let f2: &Fat<Foo> = &f1;
-    let f3: &mut Fat<Bar> = f2; //~ ERROR cannot borrow immutable dereference
+    let f3: &mut Fat<Bar> = f2; //~ ERROR mismatched types
 }

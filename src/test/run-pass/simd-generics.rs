@@ -9,19 +9,24 @@
 // except according to those terms.
 
 
+
 #![feature(simd)]
 
 use std::ops;
 
-#[simd] struct f32x4(f32, f32, f32, f32);
+#[simd]
+#[derive(Copy, Clone)]
+struct f32x4(f32, f32, f32, f32);
 
-fn add<T: ops::Add<T, T>>(lhs: T, rhs: T) -> T {
+fn add<T: ops::Add<Output=T>>(lhs: T, rhs: T) -> T {
     lhs + rhs
 }
 
-impl ops::Add<f32x4, f32x4> for f32x4 {
-    fn add(&self, rhs: &f32x4) -> f32x4 {
-        *self + *rhs
+impl ops::Add for f32x4 {
+    type Output = f32x4;
+
+    fn add(self, rhs: f32x4) -> f32x4 {
+        self + rhs
     }
 }
 

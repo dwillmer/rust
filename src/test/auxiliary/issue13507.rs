@@ -8,8 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(core)]
+
 pub mod testtypes {
-    use std::intrinsics::TypeId;
+    use std::any::TypeId;
 
     pub fn type_ids() -> Vec<TypeId> {
         let mut ids = vec!();
@@ -21,7 +23,6 @@ pub mod testtypes {
         ids.push(TypeId::of::<FooEnum>());
         ids.push(TypeId::of::<FooUniq>());
         ids.push(TypeId::of::<FooPtr>());
-        ids.push(TypeId::of::<FooClosure>());
         ids.push(TypeId::of::<&'static FooTrait>());
         ids.push(TypeId::of::<FooStruct>());
         ids.push(TypeId::of::<FooTuple>());
@@ -33,59 +34,54 @@ pub mod testtypes {
 
     // Skipping ty_bot
 
-    // Tests ty_bool
+    // Tests TyBool
     pub type FooBool = bool;
 
-    // Tests ty_char
+    // Tests TyChar
     pub type FooChar = char;
 
-    // Tests ty_int (does not test all variants of IntTy)
-    pub type FooInt = int;
+    // Tests TyInt (does not test all variants of IntTy)
+    pub type FooInt = isize;
 
-    // Tests ty_uint (does not test all variants of UintTy)
-    pub type FooUint = uint;
+    // Tests TyUint (does not test all variants of UintTy)
+    pub type FooUint = usize;
 
-    // Tests ty_float (does not test all variants of FloatTy)
+    // Tests TyFloat (does not test all variants of FloatTy)
     pub type FooFloat = f64;
 
-    // For ty_str, what kind of string should I use? &'static str? String? Raw str?
+    // For TyStr, what kind of string should I use? &'static str? String? Raw str?
 
-    // Tests ty_enum
+    // Tests TyEnum
     pub enum FooEnum {
-        VarA(uint),
-        VarB(uint, uint)
+        VarA(usize),
+        VarB(usize, usize)
     }
 
-    // Skipping ty_box
-
-    // Tests ty_uniq (of u8)
+    // Tests TyBox (of u8)
     pub type FooUniq = Box<u8>;
 
-    // As with ty_str, what type should be used for ty_vec?
+    // As with TyStr, what type should be used for TyArray?
 
-    // Tests ty_ptr
+    // Tests TyRawPtr
     pub type FooPtr = *const u8;
 
-    // Skipping ty_rptr
+    // Skipping TyRef
 
-    // Skipping ty_bare_fn (how do you get a bare function type, rather than proc or closure?)
+    // Skipping TyBareFn (how do you get a bare function type, rather than proc or closure?)
 
-    // Tests ty_closure (does not test all types of closures)
-    pub type FooClosure = |arg: u8|: 'static -> u8;
-
-    // Tests ty_trait
+    // Tests TyTrait
     pub trait FooTrait {
-        fn foo_method(&self) -> uint;
-        fn foo_static_method() -> uint;
+        fn foo_method(&self) -> usize;
+        fn foo_static_method() -> usize;
     }
 
-    // Tests ty_struct
+    // Tests TyStruct
     pub struct FooStruct {
-        pub pub_foo_field: uint,
-        foo_field: uint
+        pub pub_foo_field: usize,
+        foo_field: usize
     }
 
-    // Tests ty_tup
+    // Tests TyTuple
     pub type FooTuple = (u8, i8, bool);
 
     // Skipping ty_param
@@ -94,7 +90,7 @@ pub mod testtypes {
 
     // Skipping ty_self
 
-    // Skipping ty_infer
+    // Skipping TyInfer
 
-    // Skipping ty_err
+    // Skipping TyError
 }

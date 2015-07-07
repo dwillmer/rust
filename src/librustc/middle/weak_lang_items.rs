@@ -10,8 +10,8 @@
 
 //! Validity checking for weak lang items
 
-use driver::config;
-use driver::session::Session;
+use session::config;
+use session::Session;
 use metadata::csearch;
 use middle::lang_items;
 
@@ -23,7 +23,8 @@ use syntax::visit;
 
 use std::collections::HashSet;
 
-macro_rules! weak_lang_items( ($($name:ident, $item:ident, $sym:ident;)*) => (
+macro_rules! weak_lang_items {
+    ($($name:ident, $item:ident, $sym:ident;)*) => (
 
 struct Context<'a> {
     sess: &'a Session,
@@ -47,14 +48,14 @@ pub fn check_crate(krate: &ast::Crate,
 
     {
         let mut cx = Context { sess: sess, items: items };
-        visit::walk_crate(&mut cx, krate, ());
+        visit::walk_crate(&mut cx, krate);
     }
     verify(sess, items);
 }
 
 pub fn link_name(attrs: &[ast::Attribute]) -> Option<InternedString> {
     lang_items::extract(attrs).and_then(|name| {
-        $(if name.get() == stringify!($name) {
+        $(if &name[..] == stringify!($name) {
             Some(InternedString::new(stringify!($sym)))
         } else)* {
             None
@@ -77,15 +78,15 @@ fn verify(sess: &Session, items: &lang_items::LanguageItems) {
 
     let mut missing = HashSet::new();
     sess.cstore.iter_crate_data(|cnum, _| {
-        for item in csearch::get_missing_lang_items(&sess.cstore, cnum).iter() {
+        for item in &csearch::get_missing_lang_items(&sess.cstore, cnum) {
             missing.insert(*item);
         }
     });
 
     $(
         if missing.contains(&lang_items::$item) && items.$name().is_none() {
-            sess.err(format!("language item required, but not found: `{}`",
-                             stringify!($name)).as_slice());
+            sess.err(&format!("language item required, but not found: `{}`",
+                              stringify!($name)));
 
         }
     )*
@@ -98,27 +99,27 @@ impl<'a> Context<'a> {
                 self.items.missing.push(lang_items::$item);
             }
         } else)* {
-            self.sess.span_err(span,
-                               format!("unknown external lang item: `{}`",
-                                       name).as_slice());
+            span_err!(self.sess, span, E0264,
+                               "unknown external lang item: `{}`",
+                                       name);
         }
     }
 }
 
-impl<'a> Visitor<()> for Context<'a> {
-    fn visit_foreign_item(&mut self, i: &ast::ForeignItem, _: ()) {
-        match lang_items::extract(i.attrs.as_slice()) {
+impl<'a, 'v> Visitor<'v> for Context<'a> {
+    fn visit_foreign_item(&mut self, i: &ast::ForeignItem) {
+        match lang_items::extract(&i.attrs) {
             None => {}
-            Some(lang_item) => self.register(lang_item.get(), i.span),
+            Some(lang_item) => self.register(&lang_item, i.span),
         }
-        visit::walk_foreign_item(self, i, ())
+        visit::walk_foreign_item(self, i)
     }
 }
 
-) )
+) }
 
-weak_lang_items!(
-    begin_unwind,       BeginUnwindLangItem,        rust_begin_unwind;
+weak_lang_items! {
+    panic_fmt,          PanicFmtLangItem,            rust_begin_unwind;
     stack_exhausted,    StackExhaustedLangItem,     rust_stack_exhausted;
     eh_personality,     EhPersonalityLangItem,      rust_eh_personality;
-)
+}

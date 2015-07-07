@@ -10,55 +10,60 @@
 
 // Ensure that invoking a closure counts as a unique immutable borrow
 
+#![feature(unboxed_closures)]
 
-type Fn<'a> = ||:'a;
+type Fn<'a> = Box<FnMut() + 'a>;
 
 struct Test<'a> {
-    f: ||: 'a
+    f: Box<FnMut() + 'a>
 }
 
-fn call(f: |Fn|) {
-    f(|| {
-    //~^ ERROR: closure requires unique access to `f` but it is already borrowed
-        f(|| {})
-    });
+// FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
+fn call<F>(mut f: F) where F: FnMut(Fn) {
+    f(Box::new(|| {
+    //~^ ERROR: cannot borrow `f` as mutable more than once
+        f((Box::new(|| {})))
+    }));
 }
 
 fn test1() {
-    call(|a| {
-        a();
+    call(|mut a| {
+        a.call_mut(());
     });
 }
 
-fn test2(f: &||) {
-    (*f)(); //~ ERROR: closure invocation in a `&` reference
+fn test2<F>(f: &F) where F: FnMut() {
+    (*f)(); //~ ERROR: cannot borrow immutable borrowed content `*f` as mutable
 }
 
-fn test3(f: &mut ||) {
+fn test3<F>(f: &mut F) where F: FnMut() {
     (*f)();
 }
 
 fn test4(f: &Test) {
-    (f.f)() //~ ERROR: closure invocation in a `&` reference
+    f.f.call_mut(()) //~ ERROR: cannot borrow immutable `Box` content `*f.f` as mutable
 }
 
 fn test5(f: &mut Test) {
-    (f.f)()
+    f.f.call_mut(())
 }
 
 fn test6() {
-    let f = || {};
+    let mut f = || {};
     (|| {
         f();
     })();
 }
 
 fn test7() {
-    fn foo(_: |g: |int|, b: int|) {}
-    let f = |g: |int|, b: int| {};
-    f(|a| { //~ ERROR: cannot borrow `f` as immutable because previous closure
-        foo(f); //~ ERROR: cannot move out of captured outer variable
-    }, 3);
+    fn foo<F>(_: F) where F: FnMut(Box<FnMut(isize)>, isize) {}
+    let mut f = |g: Box<FnMut(isize)>, b: isize| {};
+    // FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
+    f(Box::new(|a| {
+        foo(f);
+        //~^ ERROR cannot move `f` into closure because it is borrowed
+        //~| ERROR cannot move out of captured outer variable in an `FnMut` closure
+    }), 3);
 }
 
 fn main() {}

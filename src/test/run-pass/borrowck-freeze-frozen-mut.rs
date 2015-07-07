@@ -10,18 +10,19 @@
 
 // Test that a `&mut` inside of an `&` is freezable.
 
+
 struct MutSlice<'a, T:'a> {
     data: &'a mut [T]
 }
 
-fn get<'a, T>(ms: &'a MutSlice<'a, T>, index: uint) -> &'a T {
+fn get<'a, T>(ms: &'a MutSlice<'a, T>, index: usize) -> &'a T {
     &ms.data[index]
 }
 
 pub fn main() {
-    let mut data = [1i, 2, 3];
+    let mut data = [1, 2, 3];
     {
-        let slice = MutSlice { data: data };
+        let slice = MutSlice { data: &mut data };
         slice.data[0] += 4;
         let index0 = get(&slice, 0);
         let index1 = get(&slice, 1);

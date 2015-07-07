@@ -8,25 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![no_std]
-
 #![allow(dead_code)]
 
 trait Deref {
-    fn get(self) -> int;
+    fn get(self) -> isize;
 }
 
-impl<'a> Deref for &'a int {
-    fn get(self) -> int {
+impl<'a> Deref for &'a isize {
+    fn get(self) -> isize {
         *self
     }
 }
 
-fn with<R:Deref>(f: |x: &int| -> R) -> int {
+fn with<R:Deref, F>(f: F) -> isize where F: FnOnce(&isize) -> R {
     f(&3).get()
 }
 
-fn return_it() -> int {
+fn return_it() -> isize {
     with(|o| o) //~ ERROR cannot infer
 }
 

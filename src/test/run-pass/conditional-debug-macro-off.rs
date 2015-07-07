@@ -8,15 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// compile-flags: --cfg ndebug
+// compile-flags: -C debug-assertions=no
 // exec-env:RUST_LOG=conditional-debug-macro-off=4
 
-#![feature(phase)]
-#[phase(plugin, link)]
+
+#![feature(rustc_private)]
+
+#[macro_use]
 extern crate log;
-extern crate debug;
 
 pub fn main() {
-    // only fails if println! evaluates its argument.
-    debug!("{:?}", { if true { fail!() } });
+    // only panics if println! evaluates its argument.
+    debug!("{:?}", { if true { panic!() } });
 }

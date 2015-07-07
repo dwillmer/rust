@@ -8,8 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(collections)]
+
 extern crate collections;
-extern crate debug;
 
 use std::collections::HashMap;
 

@@ -8,72 +8,100 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-/*!
-The compiler code necessary for `#[deriving(Decodable)]`. See
-encodable.rs for more.
-*/
+//! The compiler code necessary for `#[derive(Decodable)]`. See encodable.rs for more.
 
-use ast::{MetaItem, Item, Expr, MutMutable, Ident};
+use ast;
+use ast::{MetaItem, Expr, MutMutable};
 use codemap::Span;
-use ext::base::ExtCtxt;
+use ext::base::{ExtCtxt, Annotatable};
 use ext::build::AstBuilder;
 use ext::deriving::generic::*;
 use ext::deriving::generic::ty::*;
 use parse::token::InternedString;
 use parse::token;
+use ptr::P;
 
-use std::gc::Gc;
+pub fn expand_deriving_rustc_decodable(cx: &mut ExtCtxt,
+                                       span: Span,
+                                       mitem: &MetaItem,
+                                       item: &Annotatable,
+                                       push: &mut FnMut(Annotatable))
+{
+    expand_deriving_decodable_imp(cx, span, mitem, item, push, "rustc_serialize")
+}
 
 pub fn expand_deriving_decodable(cx: &mut ExtCtxt,
                                  span: Span,
-                                 mitem: Gc<MetaItem>,
-                                 item: Gc<Item>,
-                                 push: |Gc<Item>|) {
+                                 mitem: &MetaItem,
+                                 item: &Annotatable,
+                                 push: &mut FnMut(Annotatable))
+{
+    expand_deriving_decodable_imp(cx, span, mitem, item, push, "serialize")
+}
+
+fn expand_deriving_decodable_imp(cx: &mut ExtCtxt,
+                                 span: Span,
+                                 mitem: &MetaItem,
+                                 item: &Annotatable,
+                                 push: &mut FnMut(Annotatable),
+                                 krate: &'static str)
+{
+    if !cx.use_std {
+        // FIXME(#21880): lift this requirement.
+        cx.span_err(span, "this trait cannot be derived with #![no_std]");
+        return;
+    }
+
     let trait_def = TraitDef {
         span: span,
         attributes: Vec::new(),
-        path: Path::new_(vec!("serialize", "Decodable"), None,
-                         vec!(box Literal(Path::new_local("__D")),
-                              box Literal(Path::new_local("__E"))), true),
+        path: Path::new_(vec!(krate, "Decodable"), None, vec!(), true),
         additional_bounds: Vec::new(),
-        generics: LifetimeBounds {
-            lifetimes: Vec::new(),
-            bounds: vec!(("__D", None, vec!(Path::new_(
-                            vec!("serialize", "Decoder"), None,
-                            vec!(box Literal(Path::new_local("__E"))), true))),
-                         ("__E", None, vec!()))
-        },
+        generics: LifetimeBounds::empty(),
         methods: vec!(
             MethodDef {
                 name: "decode",
-                generics: LifetimeBounds::empty(),
+                generics: LifetimeBounds {
+                    lifetimes: Vec::new(),
+                    bounds: vec!(("__D", vec!(Path::new_(
+                                    vec!(krate, "Decoder"), None,
+                                    vec!(), true))))
+                },
                 explicit_self: None,
-                args: vec!(Ptr(box Literal(Path::new_local("__D")),
+                args: vec!(Ptr(Box::new(Literal(Path::new_local("__D"))),
                             Borrowed(None, MutMutable))),
-                ret_ty: Literal(Path::new_(vec!("std", "result", "Result"), None,
-                                          vec!(box Self,
-                                               box Literal(Path::new_local("__E"))), true)),
+                ret_ty: Literal(Path::new_(
+                    pathvec_std!(cx, core::result::Result),
+                    None,
+                    vec!(Box::new(Self_), Box::new(Literal(Path::new_(
+                        vec!["__D", "Error"], None, vec![], false
+                    )))),
+                    true
+                )),
                 attributes: Vec::new(),
-                combine_substructure: combine_substructure(|a, b, c| {
-                    decodable_substructure(a, b, c)
-                }),
-            })
+                is_unsafe: false,
+                combine_substructure: combine_substructure(Box::new(|a, b, c| {
+                    decodable_substructure(a, b, c, krate)
+                })),
+            }
+        ),
+        associated_types: Vec::new(),
     };
 
     trait_def.expand(cx, mitem, item, push)
 }
 
 fn decodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
-                          substr: &Substructure) -> Gc<Expr> {
-    let decoder = substr.nonself_args[0];
-    let recurse = vec!(cx.ident_of("serialize"),
+                          substr: &Substructure,
+                          krate: &str) -> P<Expr> {
+    let decoder = substr.nonself_args[0].clone();
+    let recurse = vec!(cx.ident_of(krate),
                     cx.ident_of("Decodable"),
                     cx.ident_of("decode"));
+    let exprdecode = cx.expr_path(cx.path_global(trait_span, recurse));
     // throw an underscore in front to suppress unused variable warnings
     let blkarg = cx.ident_of("_d");
     let blkdecoder = cx.expr_ident(trait_span, blkarg);
-    let calldecode = cx.expr_call_global(trait_span, recurse, vec!(blkdecoder));
-    let lambdadecode = cx.lambda_expr_1(trait_span, calldecode, blkarg);
 
     return match *substr.fields {
         StaticStruct(_, ref summary) => {
@@ -83,16 +111,17 @@ fn decodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
             };
             let read_struct_field = cx.ident_of("read_struct_field");
 
+            let path = cx.path_ident(trait_span, substr.type_ident);
             let result = decode_static_fields(cx,
                                               trait_span,
-                                              substr.type_ident,
+                                              path,
                                               summary,
                                               |cx, span, name, field| {
                 cx.expr_try(span,
-                    cx.expr_method_call(span, blkdecoder, read_struct_field,
+                    cx.expr_method_call(span, blkdecoder.clone(), read_struct_field,
                                         vec!(cx.expr_str(span, name),
-                                          cx.expr_uint(span, field),
-                                          lambdadecode)))
+                                          cx.expr_usize(span, field),
+                                          exprdecode.clone())))
             });
             let result = cx.expr_ok(trait_span, result);
             cx.expr_method_call(trait_span,
@@ -100,7 +129,7 @@ fn decodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
                                 cx.ident_of("read_struct"),
                                 vec!(
                 cx.expr_str(trait_span, token::get_ident(substr.type_ident)),
-                cx.expr_uint(trait_span, nfields),
+                cx.expr_usize(trait_span, nfields),
                 cx.lambda_expr_1(trait_span, result, blkarg)
             ))
         }
@@ -114,19 +143,20 @@ fn decodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
             for (i, &(name, v_span, ref parts)) in fields.iter().enumerate() {
                 variants.push(cx.expr_str(v_span, token::get_ident(name)));
 
+                let path = cx.path(trait_span, vec![substr.type_ident, name]);
                 let decoded = decode_static_fields(cx,
                                                    v_span,
-                                                   name,
+                                                   path,
                                                    parts,
                                                    |cx, span, _, field| {
-                    let idx = cx.expr_uint(span, field);
+                    let idx = cx.expr_usize(span, field);
                     cx.expr_try(span,
-                        cx.expr_method_call(span, blkdecoder, rvariant_arg,
-                                            vec!(idx, lambdadecode)))
+                        cx.expr_method_call(span, blkdecoder.clone(), rvariant_arg,
+                                            vec!(idx, exprdecode.clone())))
                 });
 
                 arms.push(cx.arm(v_span,
-                                 vec!(cx.pat_lit(v_span, cx.expr_uint(v_span, i))),
+                                 vec!(cx.pat_lit(v_span, cx.expr_usize(v_span, i))),
                                  decoded));
             }
 
@@ -137,6 +167,7 @@ fn decodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
                                                   cx.expr_ident(trait_span, variant), arms));
             let lambda = cx.lambda_expr(trait_span, vec!(blkarg, variant), result);
             let variant_vec = cx.expr_vec(trait_span, variants);
+            let variant_vec = cx.expr_addr_of(trait_span, variant_vec);
             let result = cx.expr_method_call(trait_span, blkdecoder,
                                              cx.ident_of("read_enum_variant"),
                                              vec!(variant_vec, lambda));
@@ -148,32 +179,34 @@ fn decodable_substructure(cx: &mut ExtCtxt, trait_span: Span,
                 cx.lambda_expr_1(trait_span, result, blkarg)
             ))
         }
-        _ => cx.bug("expected StaticEnum or StaticStruct in deriving(Decodable)")
+        _ => cx.bug("expected StaticEnum or StaticStruct in derive(Decodable)")
     };
 }
 
 /// Create a decoder for a single enum variant/struct:
-/// - `outer_pat_ident` is the name of this enum variant/struct
-/// - `getarg` should retrieve the `uint`-th field with name `@str`.
-fn decode_static_fields(cx: &mut ExtCtxt,
-                        trait_span: Span,
-                        outer_pat_ident: Ident,
-                        fields: &StaticFields,
-                        getarg: |&mut ExtCtxt, Span, InternedString, uint| -> Gc<Expr>)
-                        -> Gc<Expr> {
+/// - `outer_pat_path` is the path to this enum variant/struct
+/// - `getarg` should retrieve the `usize`-th field with name `@str`.
+fn decode_static_fields<F>(cx: &mut ExtCtxt,
+                           trait_span: Span,
+                           outer_pat_path: ast::Path,
+                           fields: &StaticFields,
+                           mut getarg: F)
+                           -> P<Expr> where
+    F: FnMut(&mut ExtCtxt, Span, InternedString, usize) -> P<Expr>,
+{
     match *fields {
         Unnamed(ref fields) => {
+            let path_expr = cx.expr_path(outer_pat_path);
             if fields.is_empty() {
-                cx.expr_ident(trait_span, outer_pat_ident)
+                path_expr
             } else {
                 let fields = fields.iter().enumerate().map(|(i, &span)| {
                     getarg(cx, span,
-                           token::intern_and_get_ident(format!("_field{}",
-                                                               i).as_slice()),
+                           token::intern_and_get_ident(&format!("_field{}", i)),
                            i)
                 }).collect();
 
-                cx.expr_call_ident(trait_span, outer_pat_ident, fields)
+                cx.expr_call(trait_span, path_expr, fields)
             }
         }
         Named(ref fields) => {
@@ -182,7 +215,7 @@ fn decode_static_fields(cx: &mut ExtCtxt,
                 let arg = getarg(cx, span, token::get_ident(name), i);
                 cx.field_imm(span, name, arg)
             }).collect();
-            cx.expr_struct_ident(trait_span, outer_pat_ident, fields)
+            cx.expr_struct(trait_span, outer_pat_path, fields)
         }
     }
 }

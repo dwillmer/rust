@@ -12,20 +12,20 @@
 // anonymous fields of an enum variant vs the same anonymous field.
 
 enum Foo {
-    X, Y(uint, uint)
+    X, Y(usize, usize)
 }
 
 fn distinct_variant() {
-    let mut y = Y(1, 2);
+    let mut y = Foo::Y(1, 2);
 
     let a = match y {
-      Y(ref mut a, _) => a,
-      X => fail!()
+      Foo::Y(ref mut a, _) => a,
+      Foo::X => panic!()
     };
 
     let b = match y {
-      Y(_, ref mut b) => b,
-      X => fail!()
+      Foo::Y(_, ref mut b) => b,
+      Foo::X => panic!()
     };
 
     *a += 1;
@@ -33,16 +33,16 @@ fn distinct_variant() {
 }
 
 fn same_variant() {
-    let mut y = Y(1, 2);
+    let mut y = Foo::Y(1, 2);
 
     let a = match y {
-      Y(ref mut a, _) => a,
-      X => fail!()
+      Foo::Y(ref mut a, _) => a,
+      Foo::X => panic!()
     };
 
     let b = match y {
-      Y(ref mut b, _) => b, //~ ERROR cannot borrow
-      X => fail!()
+      Foo::Y(ref mut b, _) => b, //~ ERROR cannot borrow
+      Foo::X => panic!()
     };
 
     *a += 1;

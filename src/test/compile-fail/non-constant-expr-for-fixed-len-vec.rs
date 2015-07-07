@@ -8,15 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-test
-//
-// Ignored because of an ICE at the moment.
-
 // Check that non-constant exprs do fail as count in fixed length vec type
 
 fn main() {
-    fn bar(n: int) {
-        let _x: [int, ..n];
-        //~^ ERROR expected constant expr for vector length: non-constant path in constant expr
+    fn bar(n: isize) {
+        // FIXME (#24414): This error message needs improvement.
+        let _x: [isize; n];
+        //~^ ERROR no type for local variable
     }
 }

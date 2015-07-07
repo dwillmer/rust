@@ -8,8 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(slice_patterns)]
+
 fn main() {
     match () {
-        [()] => { } //~ ERROR mismatched types: expected `()`, found a vector pattern
+        [()] => { }
+        //~^ ERROR mismatched types
+        //~| expected `()`
+        //~| found `&[_]`
+        //~| expected ()
+        //~| found &-ptr
     }
 }

@@ -8,28 +8,33 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![macro_escape]
 #![doc(hidden)]
 
-macro_rules! int_module (($T:ty, $bits:expr) => (
+macro_rules! int_module { ($T:ty, $bits:expr) => (
 
 // FIXME(#11621): Should be deprecated once CTFE is implemented in favour of
 // calling the `mem::size_of` function.
-#[unstable]
-pub static BITS : uint = $bits;
+#[unstable(feature = "num_bits_bytes",
+           reason = "may want to be an associated function")]
+#[allow(missing_docs)]
+pub const BITS : usize = $bits;
 // FIXME(#11621): Should be deprecated once CTFE is implemented in favour of
 // calling the `mem::size_of` function.
-#[unstable]
-pub static BYTES : uint = ($bits / 8);
+#[unstable(feature = "num_bits_bytes",
+           reason = "may want to be an associated function")]
+#[allow(missing_docs)]
+pub const BYTES : usize = ($bits / 8);
 
 // FIXME(#11621): Should be deprecated once CTFE is implemented in favour of
 // calling the `Bounded::min_value` function.
-#[unstable]
-pub static MIN: $T = (-1 as $T) << (BITS - 1);
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const MIN: $T = (-1 as $T) << (BITS - 1);
 // FIXME(#9837): Compute MIN like this so the high bits that shouldn't exist are 0.
 // FIXME(#11621): Should be deprecated once CTFE is implemented in favour of
 // calling the `Bounded::max_value` function.
-#[unstable]
-pub static MAX: $T = !MIN;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const MAX: $T = !MIN;
 
-))
+) }

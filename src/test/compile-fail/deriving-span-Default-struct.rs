@@ -10,15 +10,14 @@
 
 // This file was auto-generated using 'src/etc/generate-deriving-span-tests.py'
 
-#![feature(struct_variant)]
 extern crate rand;
 
 
 struct Error;
 
-#[deriving(Default)]
+#[derive(Default)]
 struct Struct {
-    x: Error //~ ERROR
+    x: Error //~ ERROR `core::default::Default` is not implemented
 }
 
 fn main() {}

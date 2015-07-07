@@ -13,8 +13,10 @@
 // This test makes sure we can do cross-crate inlining on functions
 // that use capture clauses.
 
+// pretty-expanded FIXME #23616
+
 extern crate cci_capture_clause;
 
 pub fn main() {
-    cci_capture_clause::foo(()).recv()
+    cci_capture_clause::foo(()).recv().unwrap();
 }

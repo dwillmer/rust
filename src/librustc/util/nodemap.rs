@@ -12,12 +12,14 @@
 
 #![allow(non_snake_case)]
 
+use std::collections::hash_state::DefaultState;
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hasher, Hash, Writer};
+use std::default::Default;
+use std::hash::{Hasher, Hash};
 use syntax::ast;
 
-pub type FnvHashMap<K, V> = HashMap<K, V, FnvHasher>;
-pub type FnvHashSet<V> = HashSet<V, FnvHasher>;
+pub type FnvHashMap<K, V> = HashMap<K, V, DefaultState<FnvHasher>>;
+pub type FnvHashSet<V> = HashSet<V, DefaultState<FnvHasher>>;
 
 pub type NodeMap<T> = FnvHashMap<ast::NodeId, T>;
 pub type DefIdMap<T> = FnvHashMap<ast::DefId, T>;
@@ -25,41 +27,17 @@ pub type DefIdMap<T> = FnvHashMap<ast::DefId, T>;
 pub type NodeSet = FnvHashSet<ast::NodeId>;
 pub type DefIdSet = FnvHashSet<ast::DefId>;
 
-// Hacks to get good names
-pub mod FnvHashMap {
-    use std::hash::Hash;
-    use std::collections::HashMap;
-    pub fn new<K: Hash<super::FnvState> + Eq, V>() -> super::FnvHashMap<K, V> {
-        HashMap::with_hasher(super::FnvHasher)
-    }
+pub fn FnvHashMap<K: Hash + Eq, V>() -> FnvHashMap<K, V> {
+    Default::default()
 }
-pub mod FnvHashSet {
-    use std::hash::Hash;
-    use std::collections::HashSet;
-    pub fn new<V: Hash<super::FnvState> + Eq>() -> super::FnvHashSet<V> {
-        HashSet::with_hasher(super::FnvHasher)
-    }
+pub fn FnvHashSet<V: Hash + Eq>() -> FnvHashSet<V> {
+    Default::default()
 }
-pub mod NodeMap {
-    pub fn new<T>() -> super::NodeMap<T> {
-        super::FnvHashMap::new()
-    }
-}
-pub mod DefIdMap {
-    pub fn new<T>() -> super::DefIdMap<T> {
-        super::FnvHashMap::new()
-    }
-}
-pub mod NodeSet {
-    pub fn new() -> super::NodeSet {
-        super::FnvHashSet::new()
-    }
-}
-pub mod DefIdSet {
-    pub fn new() -> super::DefIdSet {
-        super::FnvHashSet::new()
-    }
-}
+
+pub fn NodeMap<T>() -> NodeMap<T> { FnvHashMap() }
+pub fn DefIdMap<T>() -> DefIdMap<T> { FnvHashMap() }
+pub fn NodeSet() -> NodeSet { FnvHashSet() }
+pub fn DefIdSet() -> DefIdSet { FnvHashSet() }
 
 /// A speedy hash algorithm for node ids and def ids. The hashmap in
 /// libcollections by default uses SipHash which isn't quite as speedy as we
@@ -68,27 +46,20 @@ pub mod DefIdSet {
 ///
 /// This uses FNV hashing, as described here:
 /// http://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
-#[deriving(Clone)]
-pub struct FnvHasher;
+pub struct FnvHasher(u64);
 
-pub struct FnvState(u64);
-
-impl Hasher<FnvState> for FnvHasher {
-    fn hash<T: Hash<FnvState>>(&self, t: &T) -> u64 {
-        let mut state = FnvState(0xcbf29ce484222325);
-        t.hash(&mut state);
-        let FnvState(ret) = state;
-        return ret;
-    }
+impl Default for FnvHasher {
+    fn default() -> FnvHasher { FnvHasher(0xcbf29ce484222325) }
 }
 
-impl Writer for FnvState {
+impl Hasher for FnvHasher {
     fn write(&mut self, bytes: &[u8]) {
-        let FnvState(mut hash) = *self;
-        for byte in bytes.iter() {
+        let FnvHasher(mut hash) = *self;
+        for byte in bytes {
             hash = hash ^ (*byte as u64);
-            hash = hash * 0x100000001b3;
+            hash = hash.wrapping_mul(0x100000001b3);
         }
-        *self = FnvState(hash);
+        *self = FnvHasher(hash);
     }
+    fn finish(&self) -> u64 { self.0 }
 }

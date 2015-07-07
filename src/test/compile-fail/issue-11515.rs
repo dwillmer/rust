@@ -8,11 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-struct Test<'s> {
-    func: ||: 's,
+#![feature(box_syntax)]
+
+struct Test {
+    func: Box<FnMut()+'static>
 }
 
 fn main() {
-    let test = box Test { func: proc() {} };
-    //~^ ERROR: expected `||`, found `proc()`
+    // FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
+    let closure: Box<Fn()+'static> = Box::new(|| ());
+    let test = box Test { func: closure }; //~ ERROR mismatched types
 }

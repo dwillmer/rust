@@ -9,8 +9,8 @@
 // except according to those terms.
 
 
-fn foo(x: *const Box<int>) -> Box<int> {
-    let y = *x; //~ ERROR dereference of unsafe pointer requires unsafe function or block
+fn foo(x: *const Box<isize>) -> Box<isize> {
+    let y = *x; //~ ERROR dereference of raw pointer requires unsafe function or block
     return y;
 }
 

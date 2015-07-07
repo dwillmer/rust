@@ -8,23 +8,25 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
+
 trait X {
-    fn get_i(&self) -> int;
+    fn get_i(&self) -> isize;
 }
 
 
 struct B {
-    i: int
+    i: isize
 }
 
 impl X for B {
-    fn get_i(&self) -> int {
+    fn get_i(&self) -> isize {
         self.i
     }
 }
 
 struct A<'a> {
-    p: &'a X+'a
+    p: &'a (X+'a)
 }
 
 fn make_a<'a>(p: &'a X) -> A<'a> {

@@ -11,17 +11,18 @@
 //! Rust AST Visitor. Extracts useful information and massages it into a form
 //! usable for clean
 
+use std::collections::HashSet;
+use std::mem;
+
 use syntax::abi;
 use syntax::ast;
 use syntax::ast_util;
-use syntax::ast_map;
 use syntax::attr;
 use syntax::attr::AttrMetaMethods;
 use syntax::codemap::Span;
 
+use rustc::ast_map;
 use rustc::middle::stability;
-
-use std::gc::{Gc, GC};
 
 use core;
 use doctree::*;
@@ -34,108 +35,112 @@ use doctree::*;
 // also, is there some reason that this doesn't use the 'visit'
 // framework from syntax?
 
-pub struct RustdocVisitor<'a> {
+pub struct RustdocVisitor<'a, 'tcx: 'a> {
     pub module: Module,
     pub attrs: Vec<ast::Attribute>,
-    pub cx: &'a core::DocContext,
+    pub cx: &'a core::DocContext<'a, 'tcx>,
     pub analysis: Option<&'a core::CrateAnalysis>,
+    view_item_stack: HashSet<ast::NodeId>,
+    inlining_from_glob: bool,
 }
 
-impl<'a> RustdocVisitor<'a> {
-    pub fn new<'b>(cx: &'b core::DocContext,
-                   analysis: Option<&'b core::CrateAnalysis>) -> RustdocVisitor<'b> {
+impl<'a, 'tcx> RustdocVisitor<'a, 'tcx> {
+    pub fn new(cx: &'a core::DocContext<'a, 'tcx>,
+               analysis: Option<&'a core::CrateAnalysis>) -> RustdocVisitor<'a, 'tcx> {
+        // If the root is reexported, terminate all recursion.
+        let mut stack = HashSet::new();
+        stack.insert(ast::CRATE_NODE_ID);
         RustdocVisitor {
             module: Module::new(None),
             attrs: Vec::new(),
             cx: cx,
             analysis: analysis,
+            view_item_stack: stack,
+            inlining_from_glob: false,
         }
     }
 
     fn stability(&self, id: ast::NodeId) -> Option<attr::Stability> {
-        let tcx = match self.cx.maybe_typed {
-            core::Typed(ref tcx) => tcx,
-            core::NotTyped(_) => return None
-        };
-        stability::lookup(tcx, ast_util::local_def(id))
+        self.cx.tcx_opt().and_then(
+            |tcx| stability::lookup(tcx, ast_util::local_def(id)).map(|x| x.clone()))
     }
 
     pub fn visit(&mut self, krate: &ast::Crate) {
-        self.attrs = krate.attrs.iter().map(|x| (*x).clone()).collect();
+        self.attrs = krate.attrs.clone();
 
         self.module = self.visit_mod_contents(krate.span,
-                                              krate.attrs
-                                                   .iter()
-                                                   .map(|x| *x)
-                                                   .collect(),
+                                              krate.attrs.clone(),
                                               ast::Public,
                                               ast::CRATE_NODE_ID,
                                               &krate.module,
                                               None);
         // attach the crate's exported macros to the top-level module:
         self.module.macros = krate.exported_macros.iter()
-            .map(|it| self.visit_macro(&**it)).collect();
+            .map(|def| self.visit_macro(def)).collect();
         self.module.is_crate = true;
     }
 
-    pub fn visit_struct_def(&mut self, item: &ast::Item, sd: Gc<ast::StructDef>,
+    pub fn visit_struct_def(&mut self, item: &ast::Item,
+                            name: ast::Ident, sd: &ast::StructDef,
                             generics: &ast::Generics) -> Struct {
         debug!("Visiting struct");
         let struct_type = struct_type_from_def(&*sd);
         Struct {
             id: item.id,
             struct_type: struct_type,
-            name: item.ident,
+            name: name,
             vis: item.vis,
             stab: self.stability(item.id),
-            attrs: item.attrs.iter().map(|x| *x).collect(),
+            attrs: item.attrs.clone(),
             generics: generics.clone(),
-            fields: sd.fields.iter().map(|x| (*x).clone()).collect(),
+            fields: sd.fields.clone(),
             whence: item.span
         }
     }
 
-    pub fn visit_enum_def(&mut self, it: &ast::Item, def: &ast::EnumDef,
+    pub fn visit_enum_def(&mut self, it: &ast::Item,
+                          name: ast::Ident, def: &ast::EnumDef,
                           params: &ast::Generics) -> Enum {
         debug!("Visiting enum");
-        let mut vars: Vec<Variant> = Vec::new();
-        for x in def.variants.iter() {
-            vars.push(Variant {
-                name: x.node.name,
-                attrs: x.node.attrs.iter().map(|x| *x).collect(),
-                vis: x.node.vis,
-                stab: self.stability(x.node.id),
-                id: x.node.id,
-                kind: x.node.kind.clone(),
-                whence: x.span,
-            });
-        }
         Enum {
-            name: it.ident,
-            variants: vars,
+            name: name,
+            variants: def.variants.iter().map(|v| Variant {
+                name: v.node.name,
+                attrs: v.node.attrs.clone(),
+                vis: v.node.vis,
+                stab: self.stability(v.node.id),
+                id: v.node.id,
+                kind: v.node.kind.clone(),
+                whence: v.span,
+            }).collect(),
             vis: it.vis,
             stab: self.stability(it.id),
             generics: params.clone(),
-            attrs: it.attrs.iter().map(|x| *x).collect(),
+            attrs: it.attrs.clone(),
             id: it.id,
             whence: it.span,
         }
     }
 
-    pub fn visit_fn(&mut self, item: &ast::Item, fd: &ast::FnDecl,
-                    fn_style: &ast::FnStyle, _abi: &abi::Abi,
+    pub fn visit_fn(&mut self, item: &ast::Item,
+                    name: ast::Ident, fd: &ast::FnDecl,
+                    unsafety: &ast::Unsafety,
+                    constness: ast::Constness,
+                    abi: &abi::Abi,
                     gen: &ast::Generics) -> Function {
         debug!("Visiting fn");
         Function {
             id: item.id,
             vis: item.vis,
             stab: self.stability(item.id),
-            attrs: item.attrs.iter().map(|x| *x).collect(),
+            attrs: item.attrs.clone(),
             decl: fd.clone(),
-            name: item.ident,
+            name: name,
             whence: item.span,
             generics: gen.clone(),
-            fn_style: *fn_style,
+            unsafety: *unsafety,
+            constness: constness,
+            abi: *abi,
         }
     }
 
@@ -144,92 +149,62 @@ impl<'a> RustdocVisitor<'a> {
                               m: &ast::Mod,
                               name: Option<ast::Ident>) -> Module {
         let mut om = Module::new(name);
-        for item in m.view_items.iter() {
-            self.visit_view_item(item, &mut om);
-        }
         om.where_outer = span;
         om.where_inner = m.inner;
         om.attrs = attrs;
         om.vis = vis;
         om.stab = self.stability(id);
         om.id = id;
-        for i in m.items.iter() {
-            self.visit_item(&**i, &mut om);
+        for i in &m.items {
+            self.visit_item(&**i, None, &mut om);
         }
         om
     }
 
-    pub fn visit_view_item(&mut self, item: &ast::ViewItem, om: &mut Module) {
-        if item.vis != ast::Public {
-            return om.view_items.push(item.clone());
-        }
-        let please_inline = item.attrs.iter().any(|item| {
-            match item.meta_item_list() {
-                Some(list) => {
-                    list.iter().any(|i| i.name().get() == "inline")
-                }
-                None => false,
-            }
-        });
-        let item = match item.node {
-            ast::ViewItemUse(ref vpath) => {
-                match self.visit_view_path(*vpath, om, please_inline) {
-                    None => return,
-                    Some(path) => {
-                        ast::ViewItem {
-                            node: ast::ViewItemUse(path),
-                            .. item.clone()
-                        }
-                    }
-                }
-            }
-            ast::ViewItemExternCrate(..) => item.clone()
-        };
-        om.view_items.push(item);
-    }
-
-    fn visit_view_path(&mut self, path: Gc<ast::ViewPath>,
+    fn visit_view_path(&mut self, path: ast::ViewPath_,
                        om: &mut Module,
-                       please_inline: bool) -> Option<Gc<ast::ViewPath>> {
-        match path.node {
-            ast::ViewPathSimple(dst, _, id) => {
+                       id: ast::NodeId,
+                       please_inline: bool) -> Option<ast::ViewPath_> {
+        match path {
+            ast::ViewPathSimple(dst, base) => {
                 if self.resolve_id(id, Some(dst), false, om, please_inline) {
-                    return None
+                    None
+                } else {
+                    Some(ast::ViewPathSimple(dst, base))
                 }
             }
-            ast::ViewPathList(ref p, ref paths, ref b) => {
-                let mut mine = Vec::new();
-                for path in paths.iter() {
-                    if !self.resolve_id(path.node.id(), None, false, om,
-                                        please_inline) {
-                        mine.push(path.clone());
-                    }
-                }
+            ast::ViewPathList(p, paths) => {
+                let mine = paths.into_iter().filter(|path| {
+                    !self.resolve_id(path.node.id(), None, false, om,
+                                     please_inline)
+                }).collect::<Vec<ast::PathListItem>>();
 
-                if mine.len() == 0 { return None }
-                return Some(box(GC) ::syntax::codemap::Spanned {
-                    node: ast::ViewPathList(p.clone(), mine, b.clone()),
-                    span: path.span,
-                })
+                if mine.is_empty() {
+                    None
+                } else {
+                    Some(ast::ViewPathList(p, mine))
+                }
             }
 
             // these are feature gated anyway
-            ast::ViewPathGlob(_, id) => {
+            ast::ViewPathGlob(base) => {
                 if self.resolve_id(id, None, true, om, please_inline) {
-                    return None
+                    None
+                } else {
+                    Some(ast::ViewPathGlob(base))
                 }
             }
         }
-        return Some(path);
+
     }
 
     fn resolve_id(&mut self, id: ast::NodeId, renamed: Option<ast::Ident>,
                   glob: bool, om: &mut Module, please_inline: bool) -> bool {
-        let tcx = match self.cx.maybe_typed {
-            core::Typed(ref tcx) => tcx,
-            core::NotTyped(_) => return false
+        let tcx = match self.cx.tcx_opt() {
+            Some(tcx) => tcx,
+            None => return false
         };
-        let def = (*tcx.def_map.borrow())[id].def_id();
+        let def = tcx.def_map.borrow()[&id].def_id();
         if !ast_util::is_local(def) { return false }
         let analysis = match self.analysis {
             Some(analysis) => analysis, None => return false
@@ -237,131 +212,198 @@ impl<'a> RustdocVisitor<'a> {
         if !please_inline && analysis.public_items.contains(&def.node) {
             return false
         }
+        if !self.view_item_stack.insert(def.node) { return false }
 
-        match tcx.map.get(def.node) {
+        let ret = match tcx.map.get(def.node) {
             ast_map::NodeItem(it) => {
-                let it = match renamed {
-                    Some(ident) => {
-                        box(GC) ast::Item {
-                            ident: ident,
-                            ..(*it).clone()
-                        }
-                    }
-                    None => it,
-                };
                 if glob {
+                    let prev = mem::replace(&mut self.inlining_from_glob, true);
                     match it.node {
                         ast::ItemMod(ref m) => {
-                            for vi in m.view_items.iter() {
-                                self.visit_view_item(vi, om);
-                            }
-                            for i in m.items.iter() {
-                                self.visit_item(&**i, om);
+                            for i in &m.items {
+                                self.visit_item(&**i, None, om);
                             }
                         }
-                        _ => { fail!("glob not mapped to a module"); }
+                        ast::ItemEnum(..) => {}
+                        _ => { panic!("glob not mapped to a module or enum"); }
                     }
+                    self.inlining_from_glob = prev;
                 } else {
-                    self.visit_item(&*it, om);
+                    self.visit_item(it, renamed, om);
                 }
                 true
             }
             _ => false,
-        }
+        };
+        self.view_item_stack.remove(&id);
+        return ret;
     }
 
-    pub fn visit_item(&mut self, item: &ast::Item, om: &mut Module) {
+    pub fn visit_item(&mut self, item: &ast::Item,
+                      renamed: Option<ast::Ident>, om: &mut Module) {
         debug!("Visiting item {:?}", item);
+        let name = renamed.unwrap_or(item.ident);
         match item.node {
+            ast::ItemExternCrate(ref p) => {
+                let path = match *p {
+                    None => None,
+                    Some(x) => Some(x.to_string()),
+                };
+                om.extern_crates.push(ExternCrate {
+                    name: name,
+                    path: path,
+                    vis: item.vis,
+                    attrs: item.attrs.clone(),
+                    whence: item.span,
+                })
+            }
+            ast::ItemUse(ref vpath) => {
+                let node = vpath.node.clone();
+                let node = if item.vis == ast::Public {
+                    let please_inline = item.attrs.iter().any(|item| {
+                        match item.meta_item_list() {
+                            Some(list) => {
+                                list.iter().any(|i| &i.name()[..] == "inline")
+                            }
+                            None => false,
+                        }
+                    });
+                    match self.visit_view_path(node, om, item.id, please_inline) {
+                        None => return,
+                        Some(p) => p
+                    }
+                } else {
+                    node
+                };
+                om.imports.push(Import {
+                    id: item.id,
+                    vis: item.vis,
+                    attrs: item.attrs.clone(),
+                    node: node,
+                    whence: item.span,
+                });
+            }
             ast::ItemMod(ref m) => {
                 om.mods.push(self.visit_mod_contents(item.span,
-                                                     item.attrs
-                                                         .iter()
-                                                         .map(|x| *x)
-                                                         .collect(),
+                                                     item.attrs.clone(),
                                                      item.vis,
                                                      item.id,
                                                      m,
-                                                     Some(item.ident)));
+                                                     Some(name)));
             },
             ast::ItemEnum(ref ed, ref gen) =>
-                om.enums.push(self.visit_enum_def(item, ed, gen)),
-            ast::ItemStruct(sd, ref gen) =>
-                om.structs.push(self.visit_struct_def(item, sd, gen)),
-            ast::ItemFn(ref fd, ref pur, ref abi, ref gen, _) =>
-                om.fns.push(self.visit_fn(item, &**fd, pur, abi, gen)),
-            ast::ItemTy(ty, ref gen) => {
+                om.enums.push(self.visit_enum_def(item, name, ed, gen)),
+            ast::ItemStruct(ref sd, ref gen) =>
+                om.structs.push(self.visit_struct_def(item, name, &**sd, gen)),
+            ast::ItemFn(ref fd, ref unsafety, constness, ref abi, ref gen, _) =>
+                om.fns.push(self.visit_fn(item, name, &**fd, unsafety,
+                                          constness, abi, gen)),
+            ast::ItemTy(ref ty, ref gen) => {
                 let t = Typedef {
-                    ty: ty,
+                    ty: ty.clone(),
                     gen: gen.clone(),
-                    name: item.ident,
+                    name: name,
                     id: item.id,
-                    attrs: item.attrs.iter().map(|x| *x).collect(),
+                    attrs: item.attrs.clone(),
                     whence: item.span,
                     vis: item.vis,
                     stab: self.stability(item.id),
                 };
                 om.typedefs.push(t);
             },
-            ast::ItemStatic(ty, ref mut_, ref exp) => {
+            ast::ItemStatic(ref ty, ref mut_, ref exp) => {
                 let s = Static {
-                    type_: ty,
+                    type_: ty.clone(),
                     mutability: mut_.clone(),
                     expr: exp.clone(),
                     id: item.id,
-                    name: item.ident,
-                    attrs: item.attrs.iter().map(|x| *x).collect(),
+                    name: name,
+                    attrs: item.attrs.clone(),
                     whence: item.span,
                     vis: item.vis,
                     stab: self.stability(item.id),
                 };
                 om.statics.push(s);
             },
-            ast::ItemTrait(ref gen, _, ref b, ref items) => {
-                let t = Trait {
-                    name: item.ident,
-                    items: items.iter().map(|x| (*x).clone()).collect(),
-                    generics: gen.clone(),
-                    bounds: b.iter().map(|x| (*x).clone()).collect(),
+            ast::ItemConst(ref ty, ref exp) => {
+                let s = Constant {
+                    type_: ty.clone(),
+                    expr: exp.clone(),
                     id: item.id,
-                    attrs: item.attrs.iter().map(|x| *x).collect(),
+                    name: name,
+                    attrs: item.attrs.clone(),
+                    whence: item.span,
+                    vis: item.vis,
+                    stab: self.stability(item.id),
+                };
+                om.constants.push(s);
+            },
+            ast::ItemTrait(unsafety, ref gen, ref b, ref items) => {
+                let t = Trait {
+                    unsafety: unsafety,
+                    name: name,
+                    items: items.clone(),
+                    generics: gen.clone(),
+                    bounds: b.iter().cloned().collect(),
+                    id: item.id,
+                    attrs: item.attrs.clone(),
                     whence: item.span,
                     vis: item.vis,
                     stab: self.stability(item.id),
                 };
                 om.traits.push(t);
             },
-            ast::ItemImpl(ref gen, ref tr, ty, ref items) => {
+            ast::ItemImpl(unsafety, polarity, ref gen, ref tr, ref ty, ref items) => {
                 let i = Impl {
+                    unsafety: unsafety,
+                    polarity: polarity,
                     generics: gen.clone(),
                     trait_: tr.clone(),
-                    for_: ty,
-                    items: items.iter().map(|x| *x).collect(),
-                    attrs: item.attrs.iter().map(|x| *x).collect(),
+                    for_: ty.clone(),
+                    items: items.clone(),
+                    attrs: item.attrs.clone(),
                     id: item.id,
                     whence: item.span,
                     vis: item.vis,
                     stab: self.stability(item.id),
                 };
-                om.impls.push(i);
+                // Don't duplicate impls when inlining glob imports, we'll pick
+                // them up regardless of where they're located.
+                if !self.inlining_from_glob {
+                    om.impls.push(i);
+                }
             },
+            ast::ItemDefaultImpl(unsafety, ref trait_ref) => {
+                let i = DefaultImpl {
+                    unsafety: unsafety,
+                    trait_: trait_ref.clone(),
+                    id: item.id,
+                    attrs: item.attrs.clone(),
+                    whence: item.span,
+                };
+                // see comment above about ItemImpl
+                if !self.inlining_from_glob {
+                    om.def_traits.push(i);
+                }
+            }
             ast::ItemForeignMod(ref fm) => {
                 om.foreigns.push(fm.clone());
             }
             ast::ItemMac(_) => {
-                fail!("rustdoc: macros should be gone, after expansion");
+                panic!("rustdoc: macros should be gone, after expansion");
             }
         }
     }
 
     // convert each exported_macro into a doc item
-    fn visit_macro(&self, item: &ast::Item) -> Macro {
+    fn visit_macro(&self, def: &ast::MacroDef) -> Macro {
         Macro {
-            id: item.id,
-            attrs: item.attrs.iter().map(|x| *x).collect(),
-            name: item.ident,
-            whence: item.span,
-            stab: self.stability(item.id),
+            id: def.id,
+            attrs: def.attrs.clone(),
+            name: def.ident,
+            whence: def.span,
+            stab: self.stability(def.id),
+            imported_from: def.imported_from,
         }
     }
 }

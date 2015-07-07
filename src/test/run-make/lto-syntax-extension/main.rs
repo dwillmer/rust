@@ -8,11 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(phase)]
+#![feature(rustc_private)]
 
 extern crate lib;
-#[phase(plugin)] extern crate fourcc;
+#[macro_use] extern crate log;
 
-fn main() {
-    fourcc!("1234");
-}
+fn main() {}

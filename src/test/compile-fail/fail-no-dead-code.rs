@@ -11,14 +11,14 @@
 #![deny(dead_code)]
 #![allow(unreachable_code)]
 
-fn foo() { //~ ERROR code is never used
+fn foo() { //~ ERROR function is never used
 
     // none of these should have any dead_code exposed to the user
-    fail!();
+    panic!();
 
-    fail!("foo");
+    panic!("foo");
 
-    fail!("bar {}", "baz")
+    panic!("bar {}", "baz")
 }
 
 

@@ -8,34 +8,31 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:set print pretty off
-// gdb-command:rbreak zzz
 // gdb-command:run
-// gdb-command:finish
 
 // gdb-command:print no_padding16
-// gdb-check:$1 = {10000, -10001}
+// gdb-check:$1 = {__0 = 10000, __1 = -10001}
 
 // gdb-command:print no_padding32
-// gdb-check:$2 = {-10002, -10003.5, 10004}
+// gdb-check:$2 = {__0 = -10002, __1 = -10003.5, __2 = 10004}
 
 // gdb-command:print no_padding64
-// gdb-check:$3 = {-10005.5, 10006, 10007}
+// gdb-check:$3 = {__0 = -10005.5, __1 = 10006, __2 = 10007}
 
 // gdb-command:print no_padding163264
-// gdb-check:$4 = {-10008, 10009, 10010, 10011}
+// gdb-check:$4 = {__0 = -10008, __1 = 10009, __2 = 10010, __3 = 10011}
 
 // gdb-command:print internal_padding
-// gdb-check:$5 = {10012, -10013}
+// gdb-check:$5 = {__0 = 10012, __1 = -10013}
 
 // gdb-command:print padding_at_end
-// gdb-check:$6 = {-10014, 10015}
+// gdb-check:$6 = {__0 = -10014, __1 = 10015}
 
 
 // === LLDB TESTS ==================================================================================
@@ -63,6 +60,9 @@
 // This test case mainly makes sure that no field names are generated for tuple structs (as opposed
 // to all fields having the name "<unnamed_field>"). Otherwise they are handled the same a normal
 // structs.
+
+
+#![omit_gdb_pretty_printer_section]
 
 struct NoPadding16(u16, i16);
 struct NoPadding32(i32, f32, u32);

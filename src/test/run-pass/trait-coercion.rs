@@ -8,15 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::io;
+#![feature(box_syntax)]
+
+use std::io::{self, Write};
 
 trait Trait {
     fn f(&self);
 }
 
+#[derive(Copy, Clone)]
 struct Struct {
-    x: int,
-    y: int,
+    x: isize,
+    y: isize,
 }
 
 impl Trait for Struct {
@@ -25,18 +28,17 @@ impl Trait for Struct {
     }
 }
 
-fn foo(mut a: Box<Writer>) {
-    a.write(b"Hello\n");
-}
+fn foo(mut a: Box<Write>) {}
+
+// FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
 
 pub fn main() {
     let a = Struct { x: 1, y: 2 };
-    let b: Box<Trait> = box a;
+    let b: Box<Trait> = Box::new(a);
     b.f();
     let c: &Trait = &a;
     c.f();
 
     let out = io::stdout();
-    foo(box out);
+    foo(Box::new(out));
 }
-

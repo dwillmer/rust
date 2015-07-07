@@ -9,6 +9,6 @@
 // except according to those terms.
 
 
-pub unsafe fn f(xs: Vec<int> ) {
-    xs.iter().map(|_x| { unsafe fn q() { fail!(); } }).collect::<Vec<()>>();
+pub unsafe fn f(xs: Vec<isize> ) {
+    xs.iter().map(|_x| { unsafe fn q() { panic!(); } }).collect::<Vec<()>>();
 }

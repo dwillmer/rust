@@ -9,11 +9,14 @@
 // except according to those terms.
 
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
 struct X {
-    a: int
+    a: isize
 }
 
-trait Changer {
+trait Changer : Sized {
     fn change(mut self) -> Self {
         self.set_to(55);
         self
@@ -24,11 +27,11 @@ trait Changer {
         self
     }
 
-    fn set_to(&mut self, a: int);
+    fn set_to(&mut self, a: isize);
 }
 
 impl Changer for X {
-    fn set_to(&mut self, a: int) {
+    fn set_to(&mut self, a: isize) {
         self.a = a;
     }
 }
@@ -38,7 +41,7 @@ pub fn main() {
     let new_x = x.change();
     assert_eq!(new_x.a, 55);
 
-    let x = box new_x;
+    let x: Box<_> = box new_x;
     let new_x = x.change_again();
     assert_eq!(new_x.a, 45);
 }

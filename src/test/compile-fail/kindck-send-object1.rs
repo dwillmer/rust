@@ -12,20 +12,22 @@
 // is broken into two parts because some errors occur in distinct
 // phases in the compiler. See kindck-send-object2.rs as well!
 
-fn assert_send<T:Send>() { }
+fn assert_send<T:Send+'static>() { }
 trait Dummy { }
 
 // careful with object types, who knows what they close over...
 fn test51<'a>() {
-    assert_send::<&'a Dummy>(); //~ ERROR does not fulfill the required lifetime
+    assert_send::<&'a Dummy>();
+    //~^ ERROR the trait `core::marker::Sync` is not implemented
 }
 fn test52<'a>() {
-    assert_send::<&'a Dummy+Send>(); //~ ERROR does not fulfill the required lifetime
+    assert_send::<&'a (Dummy+Sync)>();
+    //~^ ERROR does not fulfill the required lifetime
 }
 
 // ...unless they are properly bounded
 fn test60() {
-    assert_send::<&'static Dummy+Send>();
+    assert_send::<&'static (Dummy+Sync)>();
 }
 fn test61() {
     assert_send::<Box<Dummy+Send>>();
@@ -33,12 +35,9 @@ fn test61() {
 
 // closure and object types can have lifetime bounds which make
 // them not ok
-fn test_70<'a>() {
-    assert_send::<proc():'a>(); //~ ERROR does not fulfill the required lifetime
-}
-
 fn test_71<'a>() {
-    assert_send::<Box<Dummy+'a>>(); //~ ERROR does not fulfill the required lifetime
+    assert_send::<Box<Dummy+'a>>();
+    //~^ ERROR the trait `core::marker::Send` is not implemented
 }
 
 fn main() { }

@@ -8,26 +8,27 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::intrinsics;
-use std::intrinsics::TypeId;
+#![feature(core)]
+
+use std::any::{Any, TypeId};
 
 pub struct A;
 pub struct B(Option<A>);
-pub struct C(Option<int>);
+pub struct C(Option<isize>);
 pub struct D(Option<&'static str>);
-pub struct E(Result<&'static str, int>);
+pub struct E(Result<&'static str, isize>);
 
-pub type F = Option<int>;
-pub type G = uint;
+pub type F = Option<isize>;
+pub type G = usize;
 pub type H = &'static str;
 
-pub unsafe fn id_A() -> TypeId { intrinsics::type_id::<A>() }
-pub unsafe fn id_B() -> TypeId { intrinsics::type_id::<B>() }
-pub unsafe fn id_C() -> TypeId { intrinsics::type_id::<C>() }
-pub unsafe fn id_D() -> TypeId { intrinsics::type_id::<D>() }
-pub unsafe fn id_E() -> TypeId { intrinsics::type_id::<E>() }
-pub unsafe fn id_F() -> TypeId { intrinsics::type_id::<F>() }
-pub unsafe fn id_G() -> TypeId { intrinsics::type_id::<G>() }
-pub unsafe fn id_H() -> TypeId { intrinsics::type_id::<H>() }
+pub unsafe fn id_A() -> TypeId { TypeId::of::<A>() }
+pub unsafe fn id_B() -> TypeId { TypeId::of::<B>() }
+pub unsafe fn id_C() -> TypeId { TypeId::of::<C>() }
+pub unsafe fn id_D() -> TypeId { TypeId::of::<D>() }
+pub unsafe fn id_E() -> TypeId { TypeId::of::<E>() }
+pub unsafe fn id_F() -> TypeId { TypeId::of::<F>() }
+pub unsafe fn id_G() -> TypeId { TypeId::of::<G>() }
+pub unsafe fn id_H() -> TypeId { TypeId::of::<H>() }
 
-pub unsafe fn foo<T: 'static>() -> TypeId { intrinsics::type_id::<T>() }
+pub unsafe fn foo<T:Any>() -> TypeId { TypeId::of::<T>() }

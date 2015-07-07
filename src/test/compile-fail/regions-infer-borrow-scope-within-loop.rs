@@ -9,12 +9,13 @@
 // except according to those terms.
 
 
-use std::gc::Gc;
-
 fn borrow<T>(x: &T) -> &T {x}
 
-fn foo(cond: || -> bool, make_box: || -> Gc<int>) {
-    let mut y: &int;
+fn foo<C, M>(mut cond: C, mut make_box: M) where
+    C: FnMut() -> bool,
+    M: FnMut() -> Box<isize>,
+{
+    let mut y: &isize;
     loop {
         let x = make_box();
 

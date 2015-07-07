@@ -9,11 +9,16 @@
 // except according to those terms.
 
 enum Either<T, U> { Left(T), Right(U) }
-struct S(Either<uint, uint>);
+struct S(Either<usize, usize>);
 
 fn main() {
-    match S(Left(5)) {
-        Right(_) => {}  //~ ERROR mismatched types: expected `S`, found `Either
+    match S(Either::Left(5)) {
+        Either::Right(_) => {}
+        //~^ ERROR mismatched types
+        //~| expected `S`
+        //~| found `Either<_, _>`
+        //~| expected struct `S`
+        //~| found enum `Either`
         _ => {}
     }
 }

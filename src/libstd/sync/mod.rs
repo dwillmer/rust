@@ -15,22 +15,30 @@
 //! and/or blocking at all, but rather provide the necessary tools to build
 //! other types of concurrent primitives.
 
-#![experimental]
+#![stable(feature = "rust1", since = "1.0.0")]
 
-#[stable]
-pub use core_sync::atomic;
+pub use alloc::arc::{Arc, Weak};
+pub use core::atomic;
 
-pub use core_sync::{deque, mpmc_bounded_queue, mpsc_queue, spsc_queue};
-pub use core_sync::{Arc, Weak, Mutex, MutexGuard, Condvar, Barrier};
-pub use core_sync::{RWLock, RWLockReadGuard, RWLockWriteGuard};
-pub use core_sync::{Semaphore, SemaphoreGuard};
-pub use core_sync::one::{Once, ONCE_INIT};
+pub use self::barrier::{Barrier, BarrierWaitResult};
+pub use self::condvar::{Condvar, StaticCondvar, CONDVAR_INIT};
+pub use self::mutex::MUTEX_INIT;
+pub use self::mutex::{Mutex, MutexGuard, StaticMutex};
+pub use self::once::{Once, ONCE_INIT};
+pub use sys_common::poison::{PoisonError, TryLockError, TryLockResult, LockResult};
+pub use self::rwlock::{RwLockReadGuard, RwLockWriteGuard};
+pub use self::rwlock::{RwLock, StaticRwLock, RW_LOCK_INIT};
+pub use self::semaphore::{Semaphore, SemaphoreGuard};
 
-#[deprecated = "use atomic instead"]
-pub use core_sync::atomic as atomics;
-
+#[allow(deprecated)]
 pub use self::future::Future;
-pub use self::task_pool::TaskPool;
 
+pub mod mpsc;
+
+mod barrier;
+mod condvar;
 mod future;
-mod task_pool;
+mod mutex;
+mod once;
+mod rwlock;
+mod semaphore;

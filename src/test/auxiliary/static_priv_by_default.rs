@@ -10,8 +10,8 @@
 
 #![crate_type = "lib"]
 
-static private: int = 0;
-pub static public: int = 0;
+static private: isize = 0;
+pub static public: isize = 0;
 
 pub struct A(());
 
@@ -20,10 +20,11 @@ impl A {
 }
 
 mod foo {
-    pub static a: int = 0;
+    pub static a: isize = 0;
     pub fn b() {}
     pub struct c;
     pub enum d {}
+    pub type e = isize;
 
     pub struct A(());
 
@@ -32,10 +33,11 @@ mod foo {
     }
 
     // these are public so the parent can reexport them.
-    pub static reexported_a: int = 0;
+    pub static reexported_a: isize = 0;
     pub fn reexported_b() {}
     pub struct reexported_c;
     pub enum reexported_d {}
+    pub type reexported_e = isize;
 }
 
 pub mod bar {
@@ -43,14 +45,17 @@ pub mod bar {
     pub use foo::reexported_b as f;
     pub use foo::reexported_c as g;
     pub use foo::reexported_d as h;
+    pub use foo::reexported_e as i;
 }
 
-pub static a: int = 0;
+pub static a: isize = 0;
 pub fn b() {}
 pub struct c;
 pub enum d {}
+pub type e = isize;
 
-static i: int = 0;
-fn j() {}
-struct k;
-enum l {}
+static j: isize = 0;
+fn k() {}
+struct l;
+enum m {}
+type n = isize;

@@ -8,24 +8,18 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:set print pretty off
-// gdb-command:rbreak zzz
 // gdb-command:run
-// gdb-command:finish
+
 // gdb-command:print *a
 // gdb-check:$1 = 1
 // gdb-command:print *b
-// gdb-check:$2 = {2, 3.5}
-// gdb-command:print c->val
-// gdb-check:$3 = 4
-// gdb-command:print d->val
-// gdb-check:$4 = false
+// gdb-check:$2 = {__0 = 2, __1 = 3.5}
 
 
 // === LLDB TESTS ==================================================================================
@@ -35,20 +29,14 @@
 // lldb-check:[...]$0 = 1
 // lldb-command:print *b
 // lldb-check:[...]$1 = (2, 3.5)
-// lldb-command:print c->val
-// lldb-check:[...]$2 = 4
-// lldb-command:print d->val
-// lldb-check:[...]$3 = false
 
-#![allow(unused_variable)]
-
-use std::gc::GC;
+#![allow(unused_variables)]
+#![feature(box_syntax)]
+#![omit_gdb_pretty_printer_section]
 
 fn main() {
-    let a = box 1i;
-    let b = box() (2i, 3.5f64);
-    let c = box(GC) 4i;
-    let d = box(GC) false;
+    let a = box 1;
+    let b = box() (2, 3.5f64);
 
     zzz(); // #break
 }

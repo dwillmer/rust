@@ -1,4 +1,4 @@
-// Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2014-2015 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -18,9 +18,12 @@
 
 pub use self::imp::Lock;
 
-
 #[cfg(unix)]
 mod imp {
+    use std::ffi::{CString, OsStr};
+    use std::os::unix::prelude::*;
+    use std::path::Path;
+    use std::io;
     use libc;
 
     #[cfg(target_os = "linux")]
@@ -38,10 +41,10 @@ mod imp {
             pub l_sysid: libc::c_int,
         }
 
-        pub static F_WRLCK: libc::c_short = 1;
-        pub static F_UNLCK: libc::c_short = 2;
-        pub static F_SETLK: libc::c_int = 6;
-        pub static F_SETLKW: libc::c_int = 7;
+        pub const F_WRLCK: libc::c_short = 1;
+        pub const F_UNLCK: libc::c_short = 2;
+        pub const F_SETLK: libc::c_int = 6;
+        pub const F_SETLKW: libc::c_int = 7;
     }
 
     #[cfg(target_os = "freebsd")]
@@ -57,13 +60,16 @@ mod imp {
             pub l_sysid: libc::c_int,
         }
 
-        pub static F_UNLCK: libc::c_short = 2;
-        pub static F_WRLCK: libc::c_short = 3;
-        pub static F_SETLK: libc::c_int = 12;
-        pub static F_SETLKW: libc::c_int = 13;
+        pub const F_UNLCK: libc::c_short = 2;
+        pub const F_WRLCK: libc::c_short = 3;
+        pub const F_SETLK: libc::c_int = 12;
+        pub const F_SETLKW: libc::c_int = 13;
     }
 
-    #[cfg(target_os = "dragonfly")]
+    #[cfg(any(target_os = "dragonfly",
+              target_os = "bitrig",
+              target_os = "netbsd",
+              target_os = "openbsd"))]
     mod os {
         use libc;
 
@@ -78,14 +84,13 @@ mod imp {
             pub l_sysid: libc::c_int,
         }
 
-        pub static F_UNLCK: libc::c_short = 2;
-        pub static F_WRLCK: libc::c_short = 3;
-        pub static F_SETLK: libc::c_int = 8;
-        pub static F_SETLKW: libc::c_int = 9;
+        pub const F_UNLCK: libc::c_short = 2;
+        pub const F_WRLCK: libc::c_short = 3;
+        pub const F_SETLK: libc::c_int = 8;
+        pub const F_SETLKW: libc::c_int = 9;
     }
 
-    #[cfg(target_os = "macos")]
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     mod os {
         use libc;
 
@@ -100,10 +105,10 @@ mod imp {
             pub l_sysid: libc::c_int,
         }
 
-        pub static F_UNLCK: libc::c_short = 2;
-        pub static F_WRLCK: libc::c_short = 3;
-        pub static F_SETLK: libc::c_int = 8;
-        pub static F_SETLKW: libc::c_int = 9;
+        pub const F_UNLCK: libc::c_short = 2;
+        pub const F_WRLCK: libc::c_short = 3;
+        pub const F_SETLK: libc::c_int = 8;
+        pub const F_SETLKW: libc::c_int = 9;
     }
 
     pub struct Lock {
@@ -112,10 +117,14 @@ mod imp {
 
     impl Lock {
         pub fn new(p: &Path) -> Lock {
-            let fd = p.with_c_str(|s| unsafe {
-                libc::open(s, libc::O_RDWR | libc::O_CREAT, libc::S_IRWXU)
-            });
-            assert!(fd > 0);
+            let os: &OsStr = p.as_ref();
+            let buf = CString::new(os.as_bytes()).unwrap();
+            let fd = unsafe {
+                libc::open(buf.as_ptr(), libc::O_RDWR | libc::O_CREAT,
+                           libc::S_IRWXU)
+            };
+            assert!(fd > 0, "failed to open lockfile: {}",
+                    io::Error::last_os_error());
             let flock = os::flock {
                 l_start: 0,
                 l_len: 0,
@@ -125,11 +134,12 @@ mod imp {
                 l_sysid: 0,
             };
             let ret = unsafe {
-                libc::fcntl(fd, os::F_SETLKW, &flock as *const os::flock)
+                libc::fcntl(fd, os::F_SETLKW, &flock)
             };
             if ret == -1 {
+                let err = io::Error::last_os_error();
                 unsafe { libc::close(fd); }
-                fail!("could not lock `{}`", p.display())
+                panic!("could not lock `{}`: {}", p.display(), err);
             }
             Lock { fd: fd }
         }
@@ -146,7 +156,7 @@ mod imp {
                 l_sysid: 0,
             };
             unsafe {
-                libc::fcntl(self.fd, os::F_SETLK, &flock as *const os::flock);
+                libc::fcntl(self.fd, os::F_SETLK, &flock);
                 libc::close(self.fd);
             }
         }
@@ -156,11 +166,14 @@ mod imp {
 #[cfg(windows)]
 mod imp {
     use libc;
+    use std::io;
     use std::mem;
-    use std::os;
+    use std::ffi::OsStr;
+    use std::os::windows::prelude::*;
+    use std::path::Path;
     use std::ptr;
 
-    static LOCKFILE_EXCLUSIVE_LOCK: libc::DWORD = 0x00000002;
+    const LOCKFILE_EXCLUSIVE_LOCK: libc::DWORD = 0x00000002;
 
     #[allow(non_snake_case)]
     extern "system" {
@@ -183,8 +196,9 @@ mod imp {
 
     impl Lock {
         pub fn new(p: &Path) -> Lock {
-            let p_16: Vec<u16> = p.as_str().unwrap().utf16_units().collect();
-            let p_16 = p_16.append_one(0);
+            let os: &OsStr = p.as_ref();
+            let mut p_16: Vec<_> = os.encode_wide().collect();
+            p_16.push(0);
             let handle = unsafe {
                 libc::CreateFileW(p_16.as_ptr(),
                                   libc::FILE_GENERIC_READ |
@@ -192,13 +206,13 @@ mod imp {
                                   libc::FILE_SHARE_READ |
                                     libc::FILE_SHARE_DELETE |
                                     libc::FILE_SHARE_WRITE,
-                                  ptr::mut_null(),
+                                  ptr::null_mut(),
                                   libc::CREATE_ALWAYS,
                                   libc::FILE_ATTRIBUTE_NORMAL,
-                                  ptr::mut_null())
+                                  ptr::null_mut())
             };
             if handle == libc::INVALID_HANDLE_VALUE {
-                fail!("create file error: {}", os::last_os_error());
+                panic!("create file error: {}", io::Error::last_os_error());
             }
             let mut overlapped: libc::OVERLAPPED = unsafe { mem::zeroed() };
             let ret = unsafe {
@@ -206,9 +220,9 @@ mod imp {
                            &mut overlapped)
             };
             if ret == 0 {
+                let err = io::Error::last_os_error();
                 unsafe { libc::CloseHandle(handle); }
-                fail!("could not lock `{}`: {}", p.display(),
-                      os::last_os_error())
+                panic!("could not lock `{}`: {}", p.display(), err);
             }
             Lock { handle: handle }
         }

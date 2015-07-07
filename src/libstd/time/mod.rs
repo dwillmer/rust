@@ -10,6 +10,8 @@
 
 //! Temporal quantification.
 
+#![unstable(feature = "time")]
+
 pub use self::duration::Duration;
 
-pub mod duration;
+mod duration;

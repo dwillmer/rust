@@ -8,14 +8,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
 // compile-flags:-g
+// min-lldb-version: 310
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
-// gdb-command:finish
 
 // gdb-command:print *stack_val_ref
 // gdb-check:$1 = {x = 10, y = 23.5}
@@ -29,23 +27,14 @@
 // gdb-command:print *ref_to_unnamed
 // gdb-check:$4 = {x = 11, y = 24.5}
 
-// gdb-command:print *managed_val_ref
-// gdb-check:$5 = {x = 12, y = 25.5}
-
-// gdb-command:print *managed_val_interior_ref_1
-// gdb-check:$6 = 12
-
-// gdb-command:print *managed_val_interior_ref_2
-// gdb-check:$7 = 25.5
-
 // gdb-command:print *unique_val_ref
-// gdb-check:$8 = {x = 13, y = 26.5}
+// gdb-check:$5 = {x = 13, y = 26.5}
 
 // gdb-command:print *unique_val_interior_ref_1
-// gdb-check:$9 = 13
+// gdb-check:$6 = 13
 
 // gdb-command:print *unique_val_interior_ref_2
-// gdb-check:$10 = 26.5
+// gdb-check:$7 = 26.5
 
 
 // === LLDB TESTS ==================================================================================
@@ -64,48 +53,34 @@
 // lldb-command:print *ref_to_unnamed
 // lldb-check:[...]$3 = SomeStruct { x: 11, y: 24.5 }
 
-// lldb-command:print *managed_val_ref
-// lldb-check:[...]$4 = SomeStruct { x: 12, y: 25.5 }
-
-// lldb-command:print *managed_val_interior_ref_1
-// lldb-check:[...]$5 = 12
-
-// lldb-command:print *managed_val_interior_ref_2
-// lldb-check:[...]$6 = 25.5
-
 // lldb-command:print *unique_val_ref
-// lldb-check:[...]$7 = SomeStruct { x: 13, y: 26.5 }
+// lldb-check:[...]$4 = SomeStruct { x: 13, y: 26.5 }
 
 // lldb-command:print *unique_val_interior_ref_1
-// lldb-check:[...]$8 = 13
+// lldb-check:[...]$5 = 13
 
 // lldb-command:print *unique_val_interior_ref_2
-// lldb-check:[...]$9 = 26.5
+// lldb-check:[...]$6 = 26.5
 
-#![allow(unused_variable)]
-
-use std::gc::GC;
+#![allow(unused_variables)]
+#![feature(box_syntax)]
+#![omit_gdb_pretty_printer_section]
 
 struct SomeStruct {
-    x: int,
+    x: isize,
     y: f64
 }
 
 fn main() {
     let stack_val: SomeStruct = SomeStruct { x: 10, y: 23.5 };
     let stack_val_ref: &SomeStruct = &stack_val;
-    let stack_val_interior_ref_1: &int = &stack_val.x;
+    let stack_val_interior_ref_1: &isize = &stack_val.x;
     let stack_val_interior_ref_2: &f64 = &stack_val.y;
     let ref_to_unnamed: &SomeStruct = &SomeStruct { x: 11, y: 24.5 };
 
-    let managed_val = box(GC) SomeStruct { x: 12, y: 25.5 };
-    let managed_val_ref: &SomeStruct = &*managed_val;
-    let managed_val_interior_ref_1: &int = &managed_val.x;
-    let managed_val_interior_ref_2: &f64 = &managed_val.y;
-
-    let unique_val = box SomeStruct { x: 13, y: 26.5 };
+    let unique_val: Box<_> = box SomeStruct { x: 13, y: 26.5 };
     let unique_val_ref: &SomeStruct = &*unique_val;
-    let unique_val_interior_ref_1: &int = &unique_val.x;
+    let unique_val_interior_ref_1: &isize = &unique_val.x;
     let unique_val_interior_ref_2: &f64 = &unique_val.y;
 
     zzz(); // #break

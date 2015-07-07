@@ -14,12 +14,20 @@
 
 #include "llvm/Support/CBindingWrapping.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Host.h"
+#if LLVM_VERSION_MINOR >= 7
+#include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
+#else
 #include "llvm/Target/TargetLibraryInfo.h"
+#endif
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+
 
 #include "llvm-c/Transforms/PassManagerBuilder.h"
 
 using namespace llvm;
+using namespace llvm::legacy;
 
 extern cl::opt<bool> EnableARMEHABI;
 
@@ -70,7 +78,7 @@ LLVMRustCreateTargetMachine(const char *triple,
                             CodeGenOpt::Level OptLevel,
                             bool EnableSegmentedStacks,
                             bool UseSoftFloat,
-                            bool NoFramePointerElim,
+                            bool PositionIndependentExecutable,
                             bool FunctionSections,
                             bool DataSections) {
     std::string Error;
@@ -82,26 +90,27 @@ LLVMRustCreateTargetMachine(const char *triple,
         return NULL;
     }
 
+    StringRef real_cpu = cpu;
+    if (real_cpu == "native") {
+        real_cpu = sys::getHostCPUName();
+    }
+
     TargetOptions Options;
-    Options.NoFramePointerElim = NoFramePointerElim;
-#if LLVM_VERSION_MINOR < 5
-    Options.EnableSegmentedStacks = EnableSegmentedStacks;
-#endif
+    Options.PositionIndependentExecutable = PositionIndependentExecutable;
     Options.FloatABIType = FloatABI::Default;
-    Options.UseSoftFloat = UseSoftFloat;
     if (UseSoftFloat) {
         Options.FloatABIType = FloatABI::Soft;
     }
+    Options.DataSections = DataSections;
+    Options.FunctionSections = FunctionSections;
 
     TargetMachine *TM = TheTarget->createTargetMachine(Trip.getTriple(),
-                                                       cpu,
+                                                       real_cpu,
                                                        feature,
                                                        Options,
                                                        RM,
                                                        CM,
                                                        OptLevel);
-    TM->setDataSections(DataSections);
-    TM->setFunctionSections(FunctionSections);
     return wrap(TM);
 }
 
@@ -118,12 +127,32 @@ LLVMRustAddAnalysisPasses(LLVMTargetMachineRef TM,
                           LLVMPassManagerRef PMR,
                           LLVMModuleRef M) {
     PassManagerBase *PM = unwrap(PMR);
-#if LLVM_VERSION_MINOR >= 5
-    PM->add(new DataLayoutPass(unwrap(M)));
+#if LLVM_VERSION_MINOR >= 7
+    PM->add(createTargetTransformInfoWrapperPass(
+          unwrap(TM)->getTargetIRAnalysis()));
 #else
-    PM->add(new DataLayout(unwrap(M)));
+#if LLVM_VERSION_MINOR == 6
+    PM->add(new DataLayoutPass());
+#else
+    PM->add(new DataLayoutPass(unwrap(M)));
 #endif
     unwrap(TM)->addAnalysisPasses(*PM);
+#endif
+}
+
+extern "C" void
+LLVMRustConfigurePassManagerBuilder(LLVMPassManagerBuilderRef PMB,
+                                    CodeGenOpt::Level OptLevel,
+                                    bool MergeFunctions,
+                                    bool SLPVectorize,
+                                    bool LoopVectorize) {
+#if LLVM_VERSION_MINOR >= 6
+    // Ignore mergefunc for now as enabling it causes crashes.
+    //unwrap(PMB)->MergeFunctions = MergeFunctions;
+#endif
+    unwrap(PMB)->SLPVectorize = SLPVectorize;
+    unwrap(PMB)->OptLevel = OptLevel;
+    unwrap(PMB)->LoopVectorize = LoopVectorize;
 }
 
 // Unfortunately, the LLVM C API doesn't provide a way to set the `LibraryInfo`
@@ -133,7 +162,11 @@ LLVMRustAddBuilderLibraryInfo(LLVMPassManagerBuilderRef PMB,
                               LLVMModuleRef M,
                               bool DisableSimplifyLibCalls) {
     Triple TargetTriple(unwrap(M)->getTargetTriple());
+#if LLVM_VERSION_MINOR >= 7
+    TargetLibraryInfoImpl *TLI = new TargetLibraryInfoImpl(TargetTriple);
+#else
     TargetLibraryInfo *TLI = new TargetLibraryInfo(TargetTriple);
+#endif
     if (DisableSimplifyLibCalls)
       TLI->disableAllFunctions();
     unwrap(PMB)->LibraryInfo = TLI;
@@ -146,10 +179,17 @@ LLVMRustAddLibraryInfo(LLVMPassManagerRef PMB,
                        LLVMModuleRef M,
                        bool DisableSimplifyLibCalls) {
     Triple TargetTriple(unwrap(M)->getTargetTriple());
+#if LLVM_VERSION_MINOR >= 7
+    TargetLibraryInfoImpl TLII(TargetTriple);
+    if (DisableSimplifyLibCalls)
+      TLII.disableAllFunctions();
+    unwrap(PMB)->add(new TargetLibraryInfoWrapperPass(TLII));
+#else
     TargetLibraryInfo *TLI = new TargetLibraryInfo(TargetTriple);
     if (DisableSimplifyLibCalls)
       TLI->disableAllFunctions();
     unwrap(PMB)->add(TLI);
+#endif
 }
 
 // Unfortunately, the LLVM C API doesn't provide an easy way of iterating over
@@ -187,19 +227,31 @@ LLVMRustWriteOutputFile(LLVMTargetMachineRef Target,
   PassManager *PM = unwrap<PassManager>(PMR);
 
   std::string ErrorInfo;
-#if LLVM_VERSION_MINOR >= 4
-  raw_fd_ostream OS(path, ErrorInfo, sys::fs::F_None);
+#if LLVM_VERSION_MINOR >= 6
+  std::error_code EC;
+  raw_fd_ostream OS(path, EC, sys::fs::F_None);
+  if (EC)
+    ErrorInfo = EC.message();
 #else
-  raw_fd_ostream OS(path, ErrorInfo, raw_fd_ostream::F_Binary);
+  raw_fd_ostream OS(path, ErrorInfo, sys::fs::F_None);
 #endif
   if (ErrorInfo != "") {
     LLVMRustSetLastError(ErrorInfo.c_str());
     return false;
   }
-  formatted_raw_ostream FOS(OS);
 
+#if LLVM_VERSION_MINOR >= 7
+  unwrap(Target)->addPassesToEmitFile(*PM, OS, FileType, false);
+#else
+  formatted_raw_ostream FOS(OS);
   unwrap(Target)->addPassesToEmitFile(*PM, FOS, FileType, false);
+#endif
   PM->run(*unwrap(M));
+
+  // Apparently `addPassesToEmitFile` adds an pointer to our on-the-stack output
+  // stream (OS), so the only real safe place to delete this is here? Don't we
+  // wish this was written in Rust?
+  delete PM;
   return true;
 }
 
@@ -210,19 +262,18 @@ LLVMRustPrintModule(LLVMPassManagerRef PMR,
   PassManager *PM = unwrap<PassManager>(PMR);
   std::string ErrorInfo;
 
-#if LLVM_VERSION_MINOR >= 4
-  raw_fd_ostream OS(path, ErrorInfo, sys::fs::F_None);
+#if LLVM_VERSION_MINOR >= 6
+  std::error_code EC;
+  raw_fd_ostream OS(path, EC, sys::fs::F_None);
+  if (EC)
+    ErrorInfo = EC.message();
 #else
-  raw_fd_ostream OS(path, ErrorInfo, raw_fd_ostream::F_Binary);
+  raw_fd_ostream OS(path, ErrorInfo, sys::fs::F_None);
 #endif
 
   formatted_raw_ostream FOS(OS);
 
-#if LLVM_VERSION_MINOR >= 5
   PM->add(createPrintModulePass(FOS));
-#else
-  PM->add(createPrintModulePass(&FOS));
-#endif
 
   PM->run(*unwrap(M));
 }

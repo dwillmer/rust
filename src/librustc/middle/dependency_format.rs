@@ -61,14 +61,14 @@
 //! Additionally, the algorithm is geared towards finding *any* solution rather
 //! than finding a number of solutions (there are normally quite a few).
 
-use std::collections::HashMap;
 use syntax::ast;
 
-use driver::session;
-use driver::config;
+use session;
+use session::config;
 use metadata::cstore;
 use metadata::csearch;
 use middle::ty;
+use util::nodemap::FnvHashMap;
 
 /// A list of dependencies for a certain crate type.
 ///
@@ -81,7 +81,7 @@ pub type DependencyList = Vec<Option<cstore::LinkagePreference>>;
 /// A mapping of all required dependencies for a particular flavor of output.
 ///
 /// This is local to the tcx, and is generally relevant to one session.
-pub type Dependencies = HashMap<config::CrateType, DependencyList>;
+pub type Dependencies = FnvHashMap<config::CrateType, DependencyList>;
 
 pub fn calculate(tcx: &ty::ctxt) {
     let mut fmts = tcx.dependency_formats.borrow_mut();
@@ -117,17 +117,27 @@ fn calculate_type(sess: &session::Session,
             sess.cstore.iter_crate_data(|cnum, data| {
                 let src = sess.cstore.get_used_crate_source(cnum).unwrap();
                 if src.rlib.is_some() { return }
-                sess.err(format!("dependency `{}` not found in rlib format",
-                                 data.name).as_slice());
+                sess.err(&format!("dependency `{}` not found in rlib format",
+                                 data.name));
             });
             return Vec::new();
+        }
+
+        // Generating a dylib without `-C prefer-dynamic` means that we're going
+        // to try to eagerly statically link all dependencies. This is normally
+        // done for end-product dylibs, not intermediate products.
+        config::CrateTypeDylib if !sess.opts.cg.prefer_dynamic => {
+            match attempt_static(sess) {
+                Some(v) => return v,
+                None => {}
+            }
         }
 
         // Everything else falls through below
         config::CrateTypeExecutable | config::CrateTypeDylib => {},
     }
 
-    let mut formats = HashMap::new();
+    let mut formats = FnvHashMap();
 
     // Sweep all crates for found dylibs. Add all dylibs, as well as their
     // dependencies, ensuring there are no conflicts. The only valid case for a
@@ -135,20 +145,20 @@ fn calculate_type(sess: &session::Session,
     sess.cstore.iter_crate_data(|cnum, data| {
         let src = sess.cstore.get_used_crate_source(cnum).unwrap();
         if src.dylib.is_some() {
-            add_library(sess, cnum, cstore::RequireDynamic, &mut formats);
             debug!("adding dylib: {}", data.name);
+            add_library(sess, cnum, cstore::RequireDynamic, &mut formats);
             let deps = csearch::get_dylib_dependency_formats(&sess.cstore, cnum);
-            for &(depnum, style) in deps.iter() {
-                add_library(sess, depnum, style, &mut formats);
-                debug!("adding {}: {}", style,
+            for &(depnum, style) in &deps {
+                debug!("adding {:?}: {}", style,
                        sess.cstore.get_crate_data(depnum).name.clone());
+                add_library(sess, depnum, style, &mut formats);
             }
         }
     });
 
     // Collect what we've got so far in the return vector.
-    let mut ret = range(1, sess.cstore.next_crate_num()).map(|i| {
-        match formats.find(&i).map(|v| *v) {
+    let mut ret = (1..sess.cstore.next_crate_num()).map(|i| {
+        match formats.get(&i).cloned() {
             v @ Some(cstore::RequireDynamic) => v,
             _ => None,
         }
@@ -160,9 +170,9 @@ fn calculate_type(sess: &session::Session,
         let src = sess.cstore.get_used_crate_source(cnum).unwrap();
         if src.dylib.is_none() && !formats.contains_key(&cnum) {
             assert!(src.rlib.is_some());
-            add_library(sess, cnum, cstore::RequireStatic, &mut formats);
-            *ret.get_mut(cnum as uint - 1) = Some(cstore::RequireStatic);
             debug!("adding staticlib: {}", data.name);
+            add_library(sess, cnum, cstore::RequireStatic, &mut formats);
+            ret[cnum as usize - 1] = Some(cstore::RequireStatic);
         }
     });
 
@@ -181,13 +191,13 @@ fn calculate_type(sess: &session::Session,
             Some(cstore::RequireDynamic) if src.dylib.is_some() => continue,
             Some(kind) => {
                 let data = sess.cstore.get_crate_data(cnum + 1);
-                sess.err(format!("crate `{}` required to be available in {}, \
+                sess.err(&format!("crate `{}` required to be available in {}, \
                                   but it was not available in this form",
                                  data.name,
                                  match kind {
                                      cstore::RequireStatic => "rlib",
                                      cstore::RequireDynamic => "dylib",
-                                 }).as_slice());
+                                 }));
             }
         }
     }
@@ -198,8 +208,8 @@ fn calculate_type(sess: &session::Session,
 fn add_library(sess: &session::Session,
                cnum: ast::CrateNum,
                link: cstore::LinkagePreference,
-               m: &mut HashMap<ast::CrateNum, cstore::LinkagePreference>) {
-    match m.find(&cnum) {
+               m: &mut FnvHashMap<ast::CrateNum, cstore::LinkagePreference>) {
+    match m.get(&cnum) {
         Some(&link2) => {
             // If the linkages differ, then we'd have two copies of the library
             // if we continued linking. If the linkages are both static, then we
@@ -210,10 +220,10 @@ fn add_library(sess: &session::Session,
             // can be refined over time.
             if link2 != link || link == cstore::RequireStatic {
                 let data = sess.cstore.get_crate_data(cnum);
-                sess.err(format!("cannot satisfy dependencies so `{}` only \
+                sess.err(&format!("cannot satisfy dependencies so `{}` only \
                                   shows up once",
-                                 data.name).as_slice());
-                sess.note("having upstream crates all available in one format \
+                                 data.name));
+                sess.help("having upstream crates all available in one format \
                            will likely make this go away");
             }
         }
@@ -223,8 +233,8 @@ fn add_library(sess: &session::Session,
 
 fn attempt_static(sess: &session::Session) -> Option<DependencyList> {
     let crates = sess.cstore.get_used_crates(cstore::RequireStatic);
-    if crates.iter().all(|&(_, ref p)| p.is_some()) {
-        Some(crates.move_iter().map(|_| Some(cstore::RequireStatic)).collect())
+    if crates.iter().by_ref().all(|&(_, ref p)| p.is_some()) {
+        Some(crates.into_iter().map(|_| Some(cstore::RequireStatic)).collect())
     } else {
         None
     }

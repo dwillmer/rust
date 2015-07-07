@@ -8,29 +8,25 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
-// gdb-command:finish
 
 // gdb-command:print x
 // gdb-check:$1 = 111102
 // gdb-command:print y
 // gdb-check:$2 = true
-
 // gdb-command:continue
-// gdb-command:finish
 
 // gdb-command:print a
 // gdb-check:$3 = 2000
 // gdb-command:print b
 // gdb-check:$4 = 3000
-
+// gdb-command:continue
 
 // === LLDB TESTS ==================================================================================
 
@@ -48,6 +44,9 @@
 // lldb-check:[...]$3 = 3000
 // lldb-command:continue
 
+
+#![omit_gdb_pretty_printer_section]
+
 fn main() {
 
     fun(111102, true);
@@ -59,7 +58,7 @@ fn main() {
     }
 }
 
-fn fun(x: int, y: bool) -> (int, bool) {
+fn fun(x: isize, y: bool) -> (isize, bool) {
     zzz(); // #break
 
     (x, y)

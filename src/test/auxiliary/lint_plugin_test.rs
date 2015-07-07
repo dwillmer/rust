@@ -10,12 +10,13 @@
 
 // force-host
 
-#![feature(phase, plugin_registrar)]
+#![feature(plugin_registrar)]
+#![feature(box_syntax, rustc_private)]
 
 extern crate syntax;
 
 // Load rustc as a plugin to get macros
-#[phase(plugin, link)]
+#[macro_use]
 extern crate rustc;
 
 use syntax::ast;
@@ -23,8 +24,7 @@ use syntax::parse::token;
 use rustc::lint::{Context, LintPass, LintPassObject, LintArray};
 use rustc::plugin::Registry;
 
-declare_lint!(TEST_LINT, Warn,
-              "Warn about items named 'lintme'")
+declare_lint!(TEST_LINT, Warn, "Warn about items named 'lintme'");
 
 struct Pass;
 
@@ -35,7 +35,7 @@ impl LintPass for Pass {
 
     fn check_item(&mut self, cx: &Context, it: &ast::Item) {
         let name = token::get_ident(it.ident);
-        if name.get() == "lintme" {
+        if &name[..] == "lintme" {
             cx.span_lint(TEST_LINT, it.span, "item is named 'lintme'");
         }
     }

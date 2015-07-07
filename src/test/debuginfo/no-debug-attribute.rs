@@ -8,13 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
 // ignore-lldb
 
 // compile-flags:-g
 
-// gdb-command:break 'no-debug-attribute.rs':32
-// gdb-command:break 'no-debug-attribute.rs':38
 // gdb-command:run
 
 // gdb-command:info locals
@@ -25,10 +22,11 @@
 // gdb-check:abc = 10
 // gdb-command:continue
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
+#![omit_gdb_pretty_printer_section]
 
 fn function_with_debuginfo() {
-    let abc = 10u;
+    let abc = 10_usize;
     return (); // #break
 }
 
@@ -42,4 +40,3 @@ fn main() {
     function_without_debuginfo();
     function_with_debuginfo();
 }
-

@@ -12,20 +12,15 @@
 // older versions of GDB too. A more extensive test can be found in
 // gdb-pretty-struct-and-enums.rs
 
-// ignore-test FIXME(#16919)
+// ignore-bitrig
+// ignore-windows failing on win32 bot
+// ignore-freebsd: gdb package too new
 // ignore-tidy-linelength
 // ignore-lldb
 // ignore-android: FIXME(#10381)
 // compile-flags:-g
-// gdb-use-pretty-printer
 
-// The following line actually doesn't have to do anything with pretty printing,
-// it just tells GDB to print values on one line:
-// gdb-command: set print pretty off
-
-// gdb-command: rbreak zzz
 // gdb-command: run
-// gdb-command: finish
 
 // gdb-command: print regular_struct
 // gdb-check:$1 = RegularStruct = {the_first_field = 101, the_second_field = 102.5, the_third_field = false}
@@ -42,8 +37,10 @@
 // gdb-command: print c_style_enum3
 // gdb-check:$5 = CStyleEnumVar3
 
+#![allow(dead_code, unused_variables)]
+
 struct RegularStruct {
-    the_first_field: int,
+    the_first_field: isize,
     the_second_field: f64,
     the_third_field: bool,
 }
@@ -66,11 +63,11 @@ fn main() {
 
     let empty_struct = EmptyStruct;
 
-    let c_style_enum1 = CStyleEnumVar1;
-    let c_style_enum2 = CStyleEnumVar2;
-    let c_style_enum3 = CStyleEnumVar3;
+    let c_style_enum1 = CStyleEnum::CStyleEnumVar1;
+    let c_style_enum2 = CStyleEnum::CStyleEnumVar2;
+    let c_style_enum3 = CStyleEnum::CStyleEnumVar3;
 
-    zzz();
+    zzz(); // #break
 }
 
 fn zzz() { () }

@@ -8,7 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(macro_rules)]
+// pretty-expanded FIXME #23616
 
 use std::default::Default;
 
@@ -28,7 +28,7 @@ impl<T: Default + PartialEq> Default for X<T> {
 
 macro_rules! constants {
     () => {
-        let _ : X<int> = Default::default();
+        let _ : X<isize> = Default::default();
     }
 }
 

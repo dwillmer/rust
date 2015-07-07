@@ -8,7 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate debug;
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
 struct pair<A,B> {
     a: A, b: B
@@ -38,7 +39,7 @@ fn f<A:Clone + 'static>(a: A, b: u16) -> Box<Invokable<A>+'static> {
 
 pub fn main() {
     let (a, b) = f(22_u64, 44u16).f();
-    println!("a={:?} b={:?}", a, b);
+    println!("a={} b={}", a, b);
     assert_eq!(a, 22u64);
     assert_eq!(b, 44u16);
 }

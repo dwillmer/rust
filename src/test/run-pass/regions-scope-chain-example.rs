@@ -16,6 +16,8 @@
 // wrong path. The new algorithm avoids this problem and hence this
 // example typechecks correctly.
 
+// pretty-expanded FIXME #23616
+
 enum ScopeChain<'a> {
     Link(Scope<'a>),
     End
@@ -31,12 +33,12 @@ struct Context<'a> {
 
 impl<'a> Context<'a> {
     fn foo(&mut self, scope: Scope) {
-        let link = if 1i < 2 {
-            let l = Link(scope);
+        let link = if 1 < 2 {
+            let l = ScopeChain::Link(scope);
             self.take_scope(&l);
             l
         } else {
-            Link(scope)
+            ScopeChain::Link(scope)
         };
         self.take_scope(&link);
     }

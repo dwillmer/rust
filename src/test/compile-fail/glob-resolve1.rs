@@ -10,8 +10,6 @@
 
 // Make sure that globs only bring in public things.
 
-#![feature(globs)]
-
 use bar::*;
 
 mod bar {
@@ -25,7 +23,7 @@ mod bar {
 
     struct C;
 
-    type D = int;
+    type D = isize;
 }
 
 fn foo<T>() {}
@@ -33,15 +31,11 @@ fn foo<T>() {}
 fn main() {
     fpriv(); //~ ERROR: unresolved
     epriv(); //~ ERROR: unresolved
-    A1; //~ ERROR: unresolved
-    B1;
+    B; //~ ERROR: unresolved
     C; //~ ERROR: unresolved
     import(); //~ ERROR: unresolved
 
     foo::<A>(); //~ ERROR: undeclared
-    //~^ ERROR: undeclared
     foo::<C>(); //~ ERROR: undeclared
-    //~^ ERROR: undeclared
     foo::<D>(); //~ ERROR: undeclared
-    //~^ ERROR: undeclared
 }

@@ -8,38 +8,54 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(overloaded_calls)]
+#![feature(unboxed_closures)]
 
 use std::ops::{Fn, FnMut, FnOnce};
 
 struct SFn {
-    x: int,
-    y: int,
+    x: isize,
+    y: isize,
 }
 
-impl Fn<(int,),int> for SFn {
-    extern "rust-call" fn call(&self, (z,): (int,)) -> int {
+impl Fn<(isize,)> for SFn {
+    extern "rust-call" fn call(&self, (z,): (isize,)) -> isize {
         self.x * self.y * z
     }
+}
+
+impl FnMut<(isize,)> for SFn {
+    extern "rust-call" fn call_mut(&mut self, args: (isize,)) -> isize { self.call(args) }
+}
+
+impl FnOnce<(isize,)> for SFn {
+    type Output = isize;
+    extern "rust-call" fn call_once(self, args: (isize,)) -> isize { self.call(args) }
 }
 
 struct SFnMut {
-    x: int,
-    y: int,
+    x: isize,
+    y: isize,
 }
 
-impl FnMut<(int,),int> for SFnMut {
-    extern "rust-call" fn call_mut(&mut self, (z,): (int,)) -> int {
+impl FnMut<(isize,)> for SFnMut {
+    extern "rust-call" fn call_mut(&mut self, (z,): (isize,)) -> isize {
         self.x * self.y * z
     }
+}
+
+impl FnOnce<(isize,)> for SFnMut {
+    type Output = isize;
+    extern "rust-call" fn call_once(mut self, args: (isize,)) -> isize { self.call_mut(args) }
 }
 
 struct SFnOnce {
     x: String,
 }
 
-impl FnOnce<(String,),uint> for SFnOnce {
-    extern "rust-call" fn call_once(self, (z,): (String,)) -> uint {
+impl FnOnce<(String,)> for SFnOnce {
+    type Output = usize;
+
+    extern "rust-call" fn call_once(self, (z,): (String,)) -> usize {
         self.x.len() + z.len()
     }
 }
@@ -71,4 +87,3 @@ fn h() {
 }
 
 fn main() {}
-

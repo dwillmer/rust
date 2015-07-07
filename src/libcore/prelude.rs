@@ -21,46 +21,29 @@
 //! # Example
 //!
 //! ```ignore
-//! # fn main() {
-//! #![feature(globs)]
-//!
 //! use core::prelude::*;
-//! # }
 //! ```
 
+#![unstable(feature = "core_prelude",
+            reason = "the libcore prelude has not been scrutinized and \
+                      stabilized yet")]
+
 // Reexported core operators
-pub use kinds::{Copy, Send, Sized, Sync};
-pub use ops::{Add, Sub, Mul, Div, Rem, Neg, Not};
-pub use ops::{BitAnd, BitOr, BitXor};
-pub use ops::{Drop, Deref, DerefMut};
-pub use ops::{Shl, Shr};
-pub use ops::{Index, IndexMut};
-pub use ops::{Fn, FnMut, FnOnce};
-pub use option::{Option, Some, None};
-pub use result::{Result, Ok, Err};
+pub use marker::{Copy, Send, Sized, Sync};
+pub use ops::{Drop, Fn, FnMut, FnOnce};
 
 // Reexported functions
-pub use iter::range;
 pub use mem::drop;
 
 // Reexported types and traits
-
-pub use char::Char;
+pub use char::CharExt;
 pub use clone::Clone;
 pub use cmp::{PartialEq, PartialOrd, Eq, Ord};
-pub use cmp::{Ordering, Less, Equal, Greater, Equiv};
-pub use collections::Collection;
-pub use iter::{FromIterator, Extendable};
-pub use iter::{Iterator, DoubleEndedIterator, RandomAccessIterator, CloneableIterator};
-pub use iter::{OrdIterator, MutableDoubleEndedIterator, ExactSize};
-pub use num::{Num, NumCast, CheckedAdd, CheckedSub, CheckedMul};
-pub use num::{Signed, Unsigned, Float};
-pub use num::{Primitive, Int, ToPrimitive, FromPrimitive};
-pub use ptr::RawPtr;
-pub use str::{Str, StrSlice};
-pub use tuple::{Tuple1, Tuple2, Tuple3, Tuple4};
-pub use tuple::{Tuple5, Tuple6, Tuple7, Tuple8};
-pub use tuple::{Tuple9, Tuple10, Tuple11, Tuple12};
-pub use slice::{ImmutablePartialEqSlice, ImmutableOrdSlice};
-pub use slice::{MutableSlice};
-pub use slice::{Slice, ImmutableSlice};
+pub use convert::{AsRef, AsMut, Into, From};
+pub use default::Default;
+pub use iter::IntoIterator;
+pub use iter::{Iterator, DoubleEndedIterator, Extend, ExactSizeIterator};
+pub use option::Option::{self, Some, None};
+pub use result::Result::{self, Ok, Err};
+pub use slice::SliceExt;
+pub use str::StrExt;

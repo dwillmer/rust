@@ -1,4 +1,4 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
+// Copyright 2013-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -9,17 +9,18 @@
 // except according to those terms.
 
 fn main() {
+    pub use std::usize; //~ ERROR: visibility has no effect
     pub struct A; //~ ERROR: visibility has no effect
     pub enum B {} //~ ERROR: visibility has no effect
     pub trait C { //~ ERROR: visibility has no effect
-        pub fn foo() {} //~ ERROR: visibility has no effect
+        fn foo(&self) {}
     }
     impl A {
-        pub fn foo() {} //~ ERROR: visibility has no effect
+        pub fn foo(&self) {} //~ ERROR: visibility has no effect
     }
 
     struct D {
-        pub foo: int, //~ ERROR: visibility has no effect
+        pub foo: isize, //~ ERROR: visibility has no effect
     }
     pub fn foo() {} //~ ERROR: visibility has no effect
     pub mod bar {} //~ ERROR: visibility has no effect

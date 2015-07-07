@@ -17,31 +17,31 @@
 // lifetimes are sublifetimes of 'static.
 
 #![allow(dead_code)]
-#![allow(unused_variable)]
+#![allow(unused_variables)]
 
 struct S;
 
 // Given 'cx, return 'cx
-type F = fn<'cx>(&'cx S) -> &'cx S;
+type F = for<'cx> fn(&'cx S) -> &'cx S;
 fn want_F(f: F) { }
 
 // Given anything, return 'static
-type G = fn<'cx>(&'cx S) -> &'static S;
+type G = for<'cx> fn(&'cx S) -> &'static S;
 fn want_G(f: G) { }
 
 // Should meet both.
 fn foo(x: &S) -> &'static S {
-    fail!()
+    panic!()
 }
 
 // Should meet both.
 fn bar<'a,'b>(x: &'a S) -> &'b S {
-    fail!()
+    panic!()
 }
 
 // Meets F, but not G.
 fn baz(x: &S) -> &S {
-    fail!()
+    panic!()
 }
 
 fn supply_F() {
@@ -53,7 +53,12 @@ fn supply_F() {
 fn supply_G() {
     want_G(foo);
     want_G(bar);
-    want_G(baz); //~ ERROR expected concrete lifetime
+    want_G(baz);
+    //~^ ERROR mismatched types
+    //~| expected `fn(&'cx S) -> &'static S`
+    //~| found `fn(&S) -> &S {baz}`
+    //~| expected concrete lifetime
+    //~| found bound lifetime parameter 'cx
 }
 
 pub fn main() {

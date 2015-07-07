@@ -8,8 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+
+#![feature(rustc_private)]
+
 extern crate getopts;
-extern crate debug;
 
 use getopts::{optopt, getopts};
 
@@ -17,10 +19,10 @@ pub fn main() {
     let args = Vec::new();
     let opts = vec!(optopt("b", "", "something", "SMTHNG"));
 
-    match getopts(args.as_slice(), opts.as_slice()) {
+    match getopts(&args, &opts) {
         Ok(ref m)  =>
             assert!(!m.opt_present("b")),
-        Err(ref f) => fail!("{}", *f)
+        Err(ref f) => panic!("{}", *f)
     };
 
 }

@@ -8,8 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(macro_rules)]
 // minimal junk
+#![feature(no_std)]
 #![no_std]
 
 macro_rules! foo {

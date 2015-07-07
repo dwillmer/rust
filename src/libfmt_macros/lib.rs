@@ -14,29 +14,43 @@
 //! Parsing does not happen at runtime: structures of `std::fmt::rt` are
 //! generated instead.
 
+// Do not remove on snapshot creation. Needed for bootstrap. (Issue #22364)
+#![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "fmt_macros"]
-#![experimental]
-#![license = "MIT/ASL2"]
+#![unstable(feature = "rustc_private")]
+#![staged_api]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
-#![feature(macro_rules, globs, import_shadowing)]
+#![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
+       html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
+       html_root_url = "http://doc.rust-lang.org/nightly/",
+       html_playground_url = "http://play.rust-lang.org/")]
 
-use std::char;
+#![feature(staged_api)]
+#![feature(unicode)]
+
+pub use self::Piece::*;
+pub use self::Position::*;
+pub use self::Alignment::*;
+pub use self::Flag::*;
+pub use self::Count::*;
+
 use std::str;
+use std::string;
 
 /// A piece is a portion of the format string which represents the next part
 /// to emit. These are emitted as a stream by the `Parser` class.
-#[deriving(PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Piece<'a> {
     /// A literal string which should directly be emitted
     String(&'a str),
     /// This describes that formatting should process the next argument (as
     /// specified inside) for emission.
-    Argument(Argument<'a>),
+    NextArgument(Argument<'a>),
 }
 
 /// Representation of an argument specification.
-#[deriving(PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Argument<'a> {
     /// Where to find this argument
     pub position: Position<'a>,
@@ -45,14 +59,14 @@ pub struct Argument<'a> {
 }
 
 /// Specification for the formatting of an argument in the format string.
-#[deriving(PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct FormatSpec<'a> {
     /// Optionally specified character to fill alignment with
     pub fill: Option<char>,
     /// Optionally specified alignment
     pub align: Alignment,
     /// Packed version of various flags provided
-    pub flags: uint,
+    pub flags: u32,
     /// The integer precision to use
     pub precision: Count<'a>,
     /// The string width requested for the resulting format
@@ -64,18 +78,18 @@ pub struct FormatSpec<'a> {
 }
 
 /// Enum describing where an argument for a format can be located.
-#[deriving(PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Position<'a> {
     /// The argument will be in the next position. This is the default.
     ArgumentNext,
     /// The argument is located at a specific index.
-    ArgumentIs(uint),
+    ArgumentIs(usize),
     /// The argument has a name.
     ArgumentNamed(&'a str),
 }
 
 /// Enum of alignments which are supported.
-#[deriving(PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Alignment {
     /// The value will be aligned to the left.
     AlignLeft,
@@ -89,7 +103,7 @@ pub enum Alignment {
 
 /// Various flags which can be applied to format strings. The meaning of these
 /// flags is defined by the formatters themselves.
-#[deriving(PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Flag {
     /// A `+` will be used to denote positive numbers.
     FlagSignPlus,
@@ -105,14 +119,14 @@ pub enum Flag {
 
 /// A count is used for the precision and width parameters of an integer, and
 /// can reference either an argument or a literal integer.
-#[deriving(PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Count<'a> {
     /// The count is specified explicitly.
-    CountIs(uint),
+    CountIs(usize),
     /// The count is specified by the argument with the given name.
     CountIsName(&'a str),
     /// The count is specified by the argument at the given index.
-    CountIsParam(uint),
+    CountIsParam(usize),
     /// The count is specified by the next parameter.
     CountIsNextParam,
     /// The count is implied and cannot be explicitly specified.
@@ -127,12 +141,14 @@ pub enum Count<'a> {
 /// necessary there's probably lots of room for improvement performance-wise.
 pub struct Parser<'a> {
     input: &'a str,
-    cur: str::CharOffsets<'a>,
+    cur: str::CharIndices<'a>,
     /// Error messages accumulated during parsing
-    pub errors: Vec<String>,
+    pub errors: Vec<string::String>,
 }
 
-impl<'a> Iterator<Piece<'a>> for Parser<'a> {
+impl<'a> Iterator for Parser<'a> {
+    type Item = Piece<'a>;
+
     fn next(&mut self) -> Option<Piece<'a>> {
         match self.cur.clone().next() {
             Some((pos, '{')) => {
@@ -140,7 +156,7 @@ impl<'a> Iterator<Piece<'a>> for Parser<'a> {
                 if self.consume('{') {
                     Some(String(self.string(pos + 1)))
                 } else {
-                    let ret = Some(Argument(self.argument()));
+                    let ret = Some(NextArgument(self.argument()));
                     self.must_consume('}');
                     ret
                 }
@@ -162,7 +178,7 @@ impl<'a> Iterator<Piece<'a>> for Parser<'a> {
 
 impl<'a> Parser<'a> {
     /// Creates a new parser for the given format string
-    pub fn new<'a>(s: &'a str) -> Parser<'a> {
+    pub fn new(s: &'a str) -> Parser<'a> {
         Parser {
             input: s,
             cur: s.char_indices(),
@@ -199,13 +215,12 @@ impl<'a> Parser<'a> {
                 self.cur.next();
             }
             Some((_, other)) => {
-                self.err(format!("expected `{}`, found `{}`",
-                                 c,
-                                 other).as_slice());
+                self.err(&format!("expected `{:?}`, found `{:?}`", c,
+                                  other));
             }
             None => {
-                self.err(format!("expected `{}` but string was terminated",
-                                 c).as_slice());
+                self.err(&format!("expected `{:?}` but string was terminated",
+                                  c));
             }
         }
     }
@@ -215,7 +230,7 @@ impl<'a> Parser<'a> {
     fn ws(&mut self) {
         loop {
             match self.cur.clone().next() {
-                Some((_, c)) if char::is_whitespace(c) => { self.cur.next(); }
+                Some((_, c)) if c.is_whitespace() => { self.cur.next(); }
                 Some(..) | None => { return }
             }
         }
@@ -223,17 +238,17 @@ impl<'a> Parser<'a> {
 
     /// Parses all of a string which is to be considered a "raw literal" in a
     /// format string. This is everything outside of the braces.
-    fn string(&mut self, start: uint) -> &'a str {
+    fn string(&mut self, start: usize) -> &'a str {
         loop {
             // we may not consume the character, so clone the iterator
             match self.cur.clone().next() {
                 Some((pos, '}')) | Some((pos, '{')) => {
-                    return self.input.slice(start, pos);
+                    return &self.input[start..pos];
                 }
                 Some(..) => { self.cur.next(); }
                 None => {
                     self.cur.next();
-                    return self.input.slice(start, self.input.len());
+                    return &self.input[start..self.input.len()];
                 }
             }
         }
@@ -255,7 +270,7 @@ impl<'a> Parser<'a> {
             Some(i) => { ArgumentIs(i) }
             None => {
                 match self.cur.clone().next() {
-                    Some((_, c)) if char::is_alphabetic(c) => {
+                    Some((_, c)) if c.is_alphabetic() => {
                         ArgumentNamed(self.word())
                     }
                     _ => ArgumentNext
@@ -273,7 +288,7 @@ impl<'a> Parser<'a> {
             flags: 0,
             precision: CountImplied,
             width: CountImplied,
-            ty: self.input.slice(0, 0),
+            ty: &self.input[..0],
         };
         if !self.consume(':') { return spec }
 
@@ -300,13 +315,13 @@ impl<'a> Parser<'a> {
         }
         // Sign flags
         if self.consume('+') {
-            spec.flags |= 1 << (FlagSignPlus as uint);
+            spec.flags |= 1 << (FlagSignPlus as u32);
         } else if self.consume('-') {
-            spec.flags |= 1 << (FlagSignMinus as uint);
+            spec.flags |= 1 << (FlagSignMinus as u32);
         }
         // Alternate marker
         if self.consume('#') {
-            spec.flags |= 1 << (FlagAlternate as uint);
+            spec.flags |= 1 << (FlagAlternate as u32);
         }
         // Width and precision
         let mut havewidth = false;
@@ -319,7 +334,7 @@ impl<'a> Parser<'a> {
                 spec.width = CountIsParam(0);
                 havewidth = true;
             } else {
-                spec.flags |= 1 << (FlagSignAwareZeroPad as uint);
+                spec.flags |= 1 << (FlagSignAwareZeroPad as u32);
             }
         }
         if !havewidth {
@@ -356,7 +371,7 @@ impl<'a> Parser<'a> {
             None => {
                 let tmp = self.cur.clone();
                 match self.word() {
-                    word if word.len() > 0 => {
+                    word if !word.is_empty() => {
                         if self.consume('$') {
                             CountIsName(word)
                         } else {
@@ -378,36 +393,36 @@ impl<'a> Parser<'a> {
     /// characters.
     fn word(&mut self) -> &'a str {
         let start = match self.cur.clone().next() {
-            Some((pos, c)) if char::is_XID_start(c) => {
+            Some((pos, c)) if c.is_xid_start() => {
                 self.cur.next();
                 pos
             }
-            Some(..) | None => { return self.input.slice(0, 0); }
+            Some(..) | None => { return &self.input[..0]; }
         };
-        let mut end;
+        let end;
         loop {
             match self.cur.clone().next() {
-                Some((_, c)) if char::is_XID_continue(c) => {
+                Some((_, c)) if c.is_xid_continue() => {
                     self.cur.next();
                 }
                 Some((pos, _)) => { end = pos; break }
                 None => { end = self.input.len(); break }
             }
         }
-        self.input.slice(start, end)
+        &self.input[start..end]
     }
 
     /// Optionally parses an integer at the current position. This doesn't deal
     /// with overflow at all, it's just accumulating digits.
-    fn integer(&mut self) -> Option<uint> {
+    fn integer(&mut self) -> Option<usize> {
         let mut cur = 0;
         let mut found = false;
         loop {
             match self.cur.clone().next() {
                 Some((_, c)) => {
-                    match char::to_digit(c, 10) {
+                    match c.to_digit(10) {
                         Some(i) => {
-                            cur = cur * 10 + i;
+                            cur = cur * 10 + i as usize;
                             found = true;
                             self.cur.next();
                         }
@@ -430,8 +445,8 @@ mod tests {
     use super::*;
 
     fn same(fmt: &'static str, p: &[Piece<'static>]) {
-        let mut parser = Parser::new(fmt);
-        assert!(p == parser.collect::<Vec<Piece<'static>>>().as_slice());
+        let parser = Parser::new(fmt);
+        assert!(parser.collect::<Vec<Piece<'static>>>() == p);
     }
 
     fn fmtdflt() -> FormatSpec<'static> {
@@ -448,17 +463,17 @@ mod tests {
     fn musterr(s: &str) {
         let mut p = Parser::new(s);
         p.next();
-        assert!(p.errors.len() != 0);
+        assert!(!p.errors.is_empty());
     }
 
     #[test]
     fn simple() {
-        same("asdf", [String("asdf")]);
-        same("a{{b", [String("a"), String("{b")]);
-        same("a}}b", [String("a"), String("}b")]);
-        same("a}}", [String("a"), String("}")]);
-        same("}}", [String("}")]);
-        same("\\}}", [String("\\"), String("}")]);
+        same("asdf", &[String("asdf")]);
+        same("a{{b", &[String("a"), String("{b")]);
+        same("a}}b", &[String("a"), String("}b")]);
+        same("a}}", &[String("a"), String("}")]);
+        same("}}", &[String("}")]);
+        same("\\}}", &[String("\\"), String("}")]);
     }
 
     #[test] fn invalid01() { musterr("{") }
@@ -469,28 +484,28 @@ mod tests {
 
     #[test]
     fn format_nothing() {
-        same("{}", [Argument(Argument {
+        same("{}", &[NextArgument(Argument {
             position: ArgumentNext,
             format: fmtdflt(),
         })]);
     }
     #[test]
     fn format_position() {
-        same("{3}", [Argument(Argument {
+        same("{3}", &[NextArgument(Argument {
             position: ArgumentIs(3),
             format: fmtdflt(),
         })]);
     }
     #[test]
     fn format_position_nothing_else() {
-        same("{3:}", [Argument(Argument {
+        same("{3:}", &[NextArgument(Argument {
             position: ArgumentIs(3),
             format: fmtdflt(),
         })]);
     }
     #[test]
     fn format_type() {
-        same("{3:a}", [Argument(Argument {
+        same("{3:a}", &[NextArgument(Argument {
             position: ArgumentIs(3),
             format: FormatSpec {
                 fill: None,
@@ -504,7 +519,7 @@ mod tests {
     }
     #[test]
     fn format_align_fill() {
-        same("{3:>}", [Argument(Argument {
+        same("{3:>}", &[NextArgument(Argument {
             position: ArgumentIs(3),
             format: FormatSpec {
                 fill: None,
@@ -515,7 +530,7 @@ mod tests {
                 ty: "",
             },
         })]);
-        same("{3:0<}", [Argument(Argument {
+        same("{3:0<}", &[NextArgument(Argument {
             position: ArgumentIs(3),
             format: FormatSpec {
                 fill: Some('0'),
@@ -526,7 +541,7 @@ mod tests {
                 ty: "",
             },
         })]);
-        same("{3:*<abcd}", [Argument(Argument {
+        same("{3:*<abcd}", &[NextArgument(Argument {
             position: ArgumentIs(3),
             format: FormatSpec {
                 fill: Some('*'),
@@ -540,7 +555,7 @@ mod tests {
     }
     #[test]
     fn format_counts() {
-        same("{:10s}", [Argument(Argument {
+        same("{:10s}", &[NextArgument(Argument {
             position: ArgumentNext,
             format: FormatSpec {
                 fill: None,
@@ -551,7 +566,7 @@ mod tests {
                 ty: "s",
             },
         })]);
-        same("{:10$.10s}", [Argument(Argument {
+        same("{:10$.10s}", &[NextArgument(Argument {
             position: ArgumentNext,
             format: FormatSpec {
                 fill: None,
@@ -562,7 +577,7 @@ mod tests {
                 ty: "s",
             },
         })]);
-        same("{:.*s}", [Argument(Argument {
+        same("{:.*s}", &[NextArgument(Argument {
             position: ArgumentNext,
             format: FormatSpec {
                 fill: None,
@@ -573,7 +588,7 @@ mod tests {
                 ty: "s",
             },
         })]);
-        same("{:.10$s}", [Argument(Argument {
+        same("{:.10$s}", &[NextArgument(Argument {
             position: ArgumentNext,
             format: FormatSpec {
                 fill: None,
@@ -584,7 +599,7 @@ mod tests {
                 ty: "s",
             },
         })]);
-        same("{:a$.b$s}", [Argument(Argument {
+        same("{:a$.b$s}", &[NextArgument(Argument {
             position: ArgumentNext,
             format: FormatSpec {
                 fill: None,
@@ -598,23 +613,23 @@ mod tests {
     }
     #[test]
     fn format_flags() {
-        same("{:-}", [Argument(Argument {
+        same("{:-}", &[NextArgument(Argument {
             position: ArgumentNext,
             format: FormatSpec {
                 fill: None,
                 align: AlignUnknown,
-                flags: (1 << FlagSignMinus as uint),
+                flags: (1 << FlagSignMinus as u32),
                 precision: CountImplied,
                 width: CountImplied,
                 ty: "",
             },
         })]);
-        same("{:+#}", [Argument(Argument {
+        same("{:+#}", &[NextArgument(Argument {
             position: ArgumentNext,
             format: FormatSpec {
                 fill: None,
                 align: AlignUnknown,
-                flags: (1 << FlagSignPlus as uint) | (1 << FlagAlternate as uint),
+                flags: (1 << FlagSignPlus as u32) | (1 << FlagAlternate as u32),
                 precision: CountImplied,
                 width: CountImplied,
                 ty: "",
@@ -623,7 +638,7 @@ mod tests {
     }
     #[test]
     fn format_mixture() {
-        same("abcd {3:a} efg", [String("abcd "), Argument(Argument {
+        same("abcd {3:a} efg", &[String("abcd "), NextArgument(Argument {
             position: ArgumentIs(3),
             format: FormatSpec {
                 fill: None,

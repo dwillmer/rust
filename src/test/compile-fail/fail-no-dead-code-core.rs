@@ -8,21 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(phase)]
 #![deny(dead_code)]
 #![allow(unreachable_code)]
+#![feature(core)]
 
-#[phase(link, plugin)] extern crate core;
+#[macro_use] extern crate core;
 
 
-fn foo() { //~ ERROR code is never used
+fn foo() { //~ ERROR function is never used
 
     // none of these should have any dead_code exposed to the user
-    fail!();
+    panic!();
 
-    fail!("foo");
+    panic!("foo");
 
-    fail!("bar {}", "baz")
+    panic!("bar {}", "baz")
 }
 
 

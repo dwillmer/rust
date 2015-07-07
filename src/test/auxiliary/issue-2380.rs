@@ -8,11 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_id="a"]
+#![crate_name="a"]
 #![crate_type = "lib"]
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
-pub trait i<T> { }
+pub trait i<T>
+{
+    fn dummy(&self, t: T) -> T { panic!() }
+}
 
 pub fn f<T>() -> Box<i<T>+'static> {
     impl<T> i<T> for () { }

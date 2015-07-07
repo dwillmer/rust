@@ -8,17 +8,17 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_id="issue_3979_traits#0.1"]
+#![crate_name="issue_3979_traits"]
 
 #![crate_type = "lib"]
 
 pub trait Positioned {
-  fn SetX(&mut self, int);
-  fn X(&self) -> int;
+  fn SetX(&mut self, isize);
+  fn X(&self) -> isize;
 }
 
 pub trait Movable: Positioned {
-  fn translate(&mut self, dx: int) {
+  fn translate(&mut self, dx: isize) {
     let x = self.X() + dx;
     self.SetX(x);
   }

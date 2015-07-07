@@ -8,34 +8,28 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-lexer-test FIXME #15679
 // Microbenchmarks for various functions in std and extra
 
-#![feature(macro_rules)]
+#![feature(rand, vec_push_all, duration, duration_span)]
 
-extern crate time;
-
-use time::precise_time_s;
-use std::rand;
-use std::rand::Rng;
+use std::iter::repeat;
 use std::mem::swap;
-use std::os;
+use std::env;
+use std::__rand::{thread_rng, Rng};
 use std::str;
-use std::vec;
-use std::io::File;
+use std::time::Duration;
 
 fn main() {
-    let argv = os::args();
-    let _tests = argv.slice(1, argv.len());
+    let argv: Vec<String> = env::args().collect();
 
-    macro_rules! bench (
+    macro_rules! bench {
         ($id:ident) =>
-            (maybe_run_test(argv.as_slice(),
+            (maybe_run_test(&argv,
                             stringify!($id).to_string(),
-                            $id)))
+                            $id))
+    }
 
     bench!(shift_push);
-    bench!(read_line);
     bench!(vec_plus);
     bench!(vec_append);
     bench!(vec_push_all);
@@ -43,12 +37,12 @@ fn main() {
     bench!(is_utf8_multibyte);
 }
 
-fn maybe_run_test(argv: &[String], name: String, test: ||) {
+fn maybe_run_test<F>(argv: &[String], name: String, test: F) where F: FnOnce() {
     let mut run_test = false;
 
-    if os::getenv("RUST_BENCH").is_some() {
+    if env::var_os("RUST_BENCH").is_some() {
         run_test = true
-    } else if argv.len() > 0 {
+    } else if !argv.is_empty() {
         run_test = argv.iter().any(|x| x == &"all".to_string()) || argv.iter().any(|x| x == &name)
     }
 
@@ -56,90 +50,81 @@ fn maybe_run_test(argv: &[String], name: String, test: ||) {
         return
     }
 
-    let start = precise_time_s();
-    test();
-    let stop = precise_time_s();
+    let dur = Duration::span(test);
 
-    println!("{}:\t\t{} ms", name, (stop - start) * 1000.0);
+    println!("{}:\t\t{}", name, dur);
 }
 
 fn shift_push() {
-    let mut v1 = Vec::from_elem(30000, 1i);
+    let mut v1 = repeat(1).take(30000).collect::<Vec<_>>();
     let mut v2 = Vec::new();
 
-    while v1.len() > 0 {
-        v2.push(v1.shift().unwrap());
-    }
-}
-
-fn read_line() {
-    use std::io::BufferedReader;
-
-    let mut path = Path::new(env!("CFG_SRC_DIR"));
-    path.push("src/test/bench/shootout-k-nucleotide.data");
-
-    for _ in range(0u, 3) {
-        let mut reader = BufferedReader::new(File::open(&path).unwrap());
-        for _line in reader.lines() {
-        }
+    while !v1.is_empty() {
+        v2.push(v1.remove(0));
     }
 }
 
 fn vec_plus() {
-    let mut r = rand::task_rng();
+    let mut r = thread_rng();
 
     let mut v = Vec::new();
     let mut i = 0;
     while i < 1500 {
-        let rv = Vec::from_elem(r.gen_range(0u, i + 1), i);
+        let rv = repeat(i).take(r.gen_range(0, i + 1)).collect::<Vec<_>>();
         if r.gen() {
-            v.push_all_move(rv);
+            v.extend(rv);
         } else {
-            v = rv.clone().append(v.as_slice());
+            let mut rv = rv.clone();
+            rv.push_all(&v);
+            v = rv;
         }
         i += 1;
     }
 }
 
 fn vec_append() {
-    let mut r = rand::task_rng();
+    let mut r = thread_rng();
 
     let mut v = Vec::new();
     let mut i = 0;
     while i < 1500 {
-        let rv = Vec::from_elem(r.gen_range(0u, i + 1), i);
+        let rv = repeat(i).take(r.gen_range(0, i + 1)).collect::<Vec<_>>();
         if r.gen() {
-            v = v.clone().append(rv.as_slice());
+            let mut t = v.clone();
+            t.push_all(&rv);
+            v = t;
         }
         else {
-            v = rv.clone().append(v.as_slice());
+            let mut t = rv.clone();
+            t.push_all(&v);
+            v = t;
         }
         i += 1;
     }
 }
 
 fn vec_push_all() {
-    let mut r = rand::task_rng();
+    let mut r = thread_rng();
 
     let mut v = Vec::new();
-    for i in range(0u, 1500) {
-        let mut rv = Vec::from_elem(r.gen_range(0u, i + 1), i);
+    for i in 0..1500 {
+        let mut rv = repeat(i).take(r.gen_range(0, i + 1)).collect::<Vec<_>>();
         if r.gen() {
-            v.push_all(rv.as_slice());
+            v.push_all(&rv);
         }
         else {
             swap(&mut v, &mut rv);
-            v.push_all(rv.as_slice());
+            v.push_all(&rv);
         }
     }
 }
 
 fn is_utf8_ascii() {
     let mut v : Vec<u8> = Vec::new();
-    for _ in range(0u, 20000) {
+    for _ in 0..20000 {
         v.push('b' as u8);
-        if !str::is_utf8(v.as_slice()) {
-            fail!("is_utf8 failed");
+        if str::from_utf8(&v).is_err() {
+            panic!("from_utf8 panicked");
         }
     }
 }
@@ -147,10 +132,10 @@ fn is_utf8_ascii() {
 fn is_utf8_multibyte() {
     let s = "b¢€𤭢";
     let mut v : Vec<u8> = Vec::new();
-    for _ in range(0u, 5000) {
+    for _ in 0..5000 {
         v.push_all(s.as_bytes());
-        if !str::is_utf8(v.as_slice()) {
-            fail!("is_utf8 failed");
+        if str::from_utf8(&v).is_err() {
+            panic!("from_utf8 panicked");
         }
     }
 }

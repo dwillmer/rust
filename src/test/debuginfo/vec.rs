@@ -8,17 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-windows: FIXME #13256
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:set print pretty off
-// gdb-command:rbreak zzz
 // gdb-command:run
-// gdb-command:finish
 // gdb-command:print a
 // gdb-check:$1 = {1, 2, 3}
 // gdb-command:print vec::VECT
@@ -31,12 +27,13 @@
 // lldb-command:print a
 // lldb-check:[...]$0 = [1, 2, 3]
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
+#![omit_gdb_pretty_printer_section]
 
-static mut VECT: [i32, ..3] = [1, 2, 3];
+static mut VECT: [i32; 3] = [1, 2, 3];
 
 fn main() {
-    let a = [1i, 2, 3];
+    let a = [1, 2, 3];
 
     unsafe {
         VECT[0] = 4;

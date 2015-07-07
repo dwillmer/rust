@@ -1,4 +1,3 @@
-
 // Copyright 2012-2014 The Rust Project Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
@@ -9,15 +8,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(globs, macro_rules, intrinsics)]
 
-macro_rules! assert_approx_eq(
+#![feature(intrinsics, core)]
+
+macro_rules! assert_approx_eq {
     ($a:expr, $b:expr) => ({
         let (a, b) = (&$a, &$b);
         assert!((*a - *b).abs() < 1.0e-6,
                 "{} is not approximately equal to {}", *a, *b);
     })
-)
+}
 
 mod rusti {
     extern "rust-intrinsic" {
@@ -64,8 +64,8 @@ pub fn main() {
         assert_approx_eq!(sqrtf32(64f32), 8f32);
         assert_approx_eq!(sqrtf64(64f64), 8f64);
 
-        assert_approx_eq!(powif32(25f32, -2i32), 0.0016f32);
-        assert_approx_eq!(powif64(23.2f64, 2i32), 538.24f64);
+        assert_approx_eq!(powif32(25f32, -2), 0.0016f32);
+        assert_approx_eq!(powif64(23.2f64, 2), 538.24f64);
 
         assert_approx_eq!(sinf32(0f32), 0f32);
         assert_approx_eq!(sinf64(f64::consts::PI / 2f64), 1f64);
@@ -102,13 +102,13 @@ pub fn main() {
 
         // Causes linker error
         // undefined reference to llvm.ceil.f32/64
-        //assert!((ceilf32(-2.3f32) == -2.0f32));
-        //assert!((ceilf64(3.8f64) == 4.0f64));
+        //assert_eq!(ceilf32(-2.3f32), -2.0f32);
+        //assert_eq!(ceilf64(3.8f64), 4.0f64);
 
         // Causes linker error
         // undefined reference to llvm.trunc.f32/64
-        //assert!((truncf32(0.1f32) == 0.0f32));
-        //assert!((truncf64(-0.1f64) == 0.0f64));
+        //assert_eq!(truncf32(0.1f32), 0.0f32);
+        //assert_eq!(truncf64(-0.1f64), 0.0f64);
     }
 
 }

@@ -8,9 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use self::SmallVectorRepr::*;
+use self::IntoIterRepr::*;
+
+use std::iter::{IntoIterator, FromIterator};
 use std::mem;
 use std::slice;
 use std::vec;
+
+use fold::MoveMap;
 
 /// A vector type optimized for cases where the size is almost always 0 or 1
 pub struct SmallVector<T> {
@@ -20,29 +26,19 @@ pub struct SmallVector<T> {
 enum SmallVectorRepr<T> {
     Zero,
     One(T),
-    Many(Vec<T> ),
-}
-
-impl<T> Collection for SmallVector<T> {
-    fn len(&self) -> uint {
-        match self.repr {
-            Zero => 0,
-            One(..) => 1,
-            Many(ref vals) => vals.len()
-        }
-    }
+    Many(Vec<T>),
 }
 
 impl<T> FromIterator<T> for SmallVector<T> {
-    fn from_iter<I: Iterator<T>>(iter: I) -> SmallVector<T> {
+    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> SmallVector<T> {
         let mut v = SmallVector::zero();
         v.extend(iter);
         v
     }
 }
 
-impl<T> Extendable<T> for SmallVector<T> {
-    fn extend<I: Iterator<T>>(&mut self, mut iter: I) {
+impl<T> Extend<T> for SmallVector<T> {
+    fn extend<I: IntoIterator<Item=T>>(&mut self, iter: I) {
         for val in iter {
             self.push(val);
         }
@@ -68,8 +64,25 @@ impl<T> SmallVector<T> {
                 let result: &[T] = &[];
                 result
             }
-            One(ref v) => slice::ref_slice(v),
-            Many(ref vs) => vs.as_slice()
+            One(ref v) => {
+                // FIXME: Could be replaced with `slice::ref_slice(v)` when it is stable.
+                unsafe { slice::from_raw_parts(v, 1) }
+            }
+            Many(ref vs) => vs
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        match self.repr {
+            Zero => None,
+            One(..) => {
+                let one = mem::replace(&mut self.repr, Zero);
+                match one {
+                    One(v1) => Some(v1),
+                    _ => unreachable!()
+                }
+            }
+            Many(ref mut vs) => vs.pop(),
         }
     }
 
@@ -88,16 +101,16 @@ impl<T> SmallVector<T> {
     }
 
     pub fn push_all(&mut self, other: SmallVector<T>) {
-        for v in other.move_iter() {
+        for v in other.into_iter() {
             self.push(v);
         }
     }
 
-    pub fn get<'a>(&'a self, idx: uint) -> &'a T {
+    pub fn get<'a>(&'a self, idx: usize) -> &'a T {
         match self.repr {
             One(ref v) if idx == 0 => v,
-            Many(ref vs) => vs.get(idx),
-            _ => fail!("out of bounds access")
+            Many(ref vs) => &vs[idx],
+            _ => panic!("out of bounds access")
         }
     }
 
@@ -106,36 +119,55 @@ impl<T> SmallVector<T> {
             One(v) => v,
             Many(v) => {
                 if v.len() == 1 {
-                    v.move_iter().next().unwrap()
+                    v.into_iter().next().unwrap()
                 } else {
-                    fail!(err)
+                    panic!(err)
                 }
             }
-            _ => fail!(err)
+            _ => panic!(err)
         }
     }
 
-    pub fn move_iter(self) -> MoveItems<T> {
+    /// Deprecated: use `into_iter`.
+    #[unstable(feature = "rustc_private")]
+    #[deprecated(since = "1.0.0", reason = "use into_iter")]
+    pub fn move_iter(self) -> IntoIter<T> {
+        self.into_iter()
+    }
+
+    pub fn into_iter(self) -> IntoIter<T> {
         let repr = match self.repr {
             Zero => ZeroIterator,
             One(v) => OneIterator(v),
-            Many(vs) => ManyIterator(vs.move_iter())
+            Many(vs) => ManyIterator(vs.into_iter())
         };
-        MoveItems { repr: repr }
+        IntoIter { repr: repr }
     }
+
+    pub fn len(&self) -> usize {
+        match self.repr {
+            Zero => 0,
+            One(..) => 1,
+            Many(ref vals) => vals.len()
+        }
+    }
+
+    pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
-pub struct MoveItems<T> {
-    repr: MoveItemsRepr<T>,
+pub struct IntoIter<T> {
+    repr: IntoIterRepr<T>,
 }
 
-enum MoveItemsRepr<T> {
+enum IntoIterRepr<T> {
     ZeroIterator,
     OneIterator(T),
-    ManyIterator(vec::MoveItems<T>),
+    ManyIterator(vec::IntoIter<T>),
 }
 
-impl<T> Iterator<T> for MoveItems<T> {
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+
     fn next(&mut self) -> Option<T> {
         match self.repr {
             ZeroIterator => None,
@@ -151,7 +183,7 @@ impl<T> Iterator<T> for MoveItems<T> {
         }
     }
 
-    fn size_hint(&self) -> (uint, Option<uint>) {
+    fn size_hint(&self) -> (usize, Option<usize>) {
         match self.repr {
             ZeroIterator => (0, Some(0)),
             OneIterator(..) => (1, Some(1)),
@@ -160,23 +192,34 @@ impl<T> Iterator<T> for MoveItems<T> {
     }
 }
 
+impl<T> MoveMap<T> for SmallVector<T> {
+    fn move_map<F>(self, mut f: F) -> SmallVector<T> where F: FnMut(T) -> T {
+        let repr = match self.repr {
+            Zero => Zero,
+            One(v) => One(f(v)),
+            Many(vs) => Many(vs.move_map(f))
+        };
+        SmallVector { repr: repr }
+    }
+}
+
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
 
     #[test]
     fn test_len() {
-        let v: SmallVector<int> = SmallVector::zero();
+        let v: SmallVector<isize> = SmallVector::zero();
         assert_eq!(0, v.len());
 
-        assert_eq!(1, SmallVector::one(1i).len());
-        assert_eq!(5, SmallVector::many(vec!(1i, 2, 3, 4, 5)).len());
+        assert_eq!(1, SmallVector::one(1).len());
+        assert_eq!(5, SmallVector::many(vec![1, 2, 3, 4, 5]).len());
     }
 
     #[test]
     fn test_push_get() {
         let mut v = SmallVector::zero();
-        v.push(1i);
+        v.push(1);
         assert_eq!(1, v.len());
         assert_eq!(&1, v.get(0));
         v.push(2);
@@ -189,7 +232,7 @@ mod test {
 
     #[test]
     fn test_from_iter() {
-        let v: SmallVector<int> = (vec!(1i, 2, 3)).move_iter().collect();
+        let v: SmallVector<isize> = (vec![1, 2, 3]).into_iter().collect();
         assert_eq!(3, v.len());
         assert_eq!(&1, v.get(0));
         assert_eq!(&2, v.get(1));
@@ -199,31 +242,31 @@ mod test {
     #[test]
     fn test_move_iter() {
         let v = SmallVector::zero();
-        let v: Vec<int> = v.move_iter().collect();
-        assert_eq!(Vec::new(), v);
+        let v: Vec<isize> = v.into_iter().collect();
+        assert_eq!(v, Vec::new());
 
-        let v = SmallVector::one(1i);
-        assert_eq!(vec!(1i), v.move_iter().collect());
+        let v = SmallVector::one(1);
+        assert_eq!(v.into_iter().collect::<Vec<_>>(), [1]);
 
-        let v = SmallVector::many(vec!(1i, 2i, 3i));
-        assert_eq!(vec!(1i, 2i, 3i), v.move_iter().collect());
+        let v = SmallVector::many(vec![1, 2, 3]);
+        assert_eq!(v.into_iter().collect::<Vec<_>>(), [1, 2, 3]);
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_expect_one_zero() {
-        let _: int = SmallVector::zero().expect_one("");
+        let _: isize = SmallVector::zero().expect_one("");
     }
 
     #[test]
-    #[should_fail]
+    #[should_panic]
     fn test_expect_one_many() {
-        SmallVector::many(vec!(1i, 2)).expect_one("");
+        SmallVector::many(vec!(1, 2)).expect_one("");
     }
 
     #[test]
     fn test_expect_one_one() {
-        assert_eq!(1i, SmallVector::one(1i).expect_one(""));
-        assert_eq!(1i, SmallVector::many(vec!(1i)).expect_one(""));
+        assert_eq!(1, SmallVector::one(1).expect_one(""));
+        assert_eq!(1, SmallVector::many(vec!(1)).expect_one(""));
     }
 }

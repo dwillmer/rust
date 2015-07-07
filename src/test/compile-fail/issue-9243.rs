@@ -8,13 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// Regresion test for issue 9243
+// Regression test for issue 9243
 
 struct Test {
-    mem: int,
+    mem: isize,
 }
 
-pub static g_test: Test = Test {mem: 0}; //~ ERROR static items are not allowed to have destructors
+pub static g_test: Test = Test {mem: 0}; //~ ERROR statics are not allowed to have destructors
 
 impl Drop for Test {
     fn drop(&mut self) {}

@@ -10,13 +10,10 @@
 
 #![forbid(warnings)]
 
-// Pretty printing tests complain about `use std::predule::*`
-#![allow(unused_imports)]
-
 // We shouldn't need to rebind a moved upvar as mut if it's already
 // marked as mut
 
 pub fn main() {
-    let mut x = 1i;
-    proc() { x = 2; };
+    let mut x = 1;
+    let _thunk = Box::new(move|| { x = 2; });
 }

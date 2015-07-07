@@ -11,8 +11,6 @@
 // ignore-pretty - token trees can't pretty print
 // compile-flags: --cfg foo
 
-#![feature(macro_rules)]
-
 macro_rules! compiles_fine {
     ($at:meta) => {
         #[cfg($at)]
@@ -27,8 +25,8 @@ macro_rules! emit {
 }
 
 // item
-compiles_fine!(bar)
-emit!(foo)
+compiles_fine!(bar);
+emit!(foo);
 
 fn foo() {
     println!("{}", MISTYPED);
@@ -40,4 +38,3 @@ pub fn main() {
     emit!(baz);
     println!("{}", MISTYPED);
 }
-

@@ -8,10 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_id="a#0.1"]
+#![crate_name="a"]
 #![crate_type = "lib"]
 
-type t1 = uint;
+type t1 = usize;
 
 trait foo {
     fn foo(&self);

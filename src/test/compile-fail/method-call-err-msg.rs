@@ -13,8 +13,8 @@
 pub struct Foo;
 impl Foo {
     fn zero(self) -> Foo { self }
-    fn one(self, _: int) -> Foo { self }
-    fn two(self, _: int, _: int) -> Foo { self }
+    fn one(self, _: isize) -> Foo { self }
+    fn two(self, _: isize, _: isize) -> Foo { self }
 }
 
 fn main() {
@@ -25,6 +25,6 @@ fn main() {
 
     let y = Foo;
     y.zero()
-     .take()    //~ ERROR type `Foo` does not implement any method in scope named `take`
+     .take()    //~ ERROR no method named `take` found for type `Foo` in the current scope
      .one(0);
 }

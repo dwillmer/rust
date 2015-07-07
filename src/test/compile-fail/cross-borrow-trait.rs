@@ -12,11 +12,15 @@
 // forbidden when `T` is a trait.
 
 struct Foo;
-trait Trait {}
+trait Trait { fn foo(&self) {} }
 impl Trait for Foo {}
 
 pub fn main() {
-    let x: Box<Trait> = box Foo;
-    let _y: &Trait = x; //~ ERROR mismatched types: expected `&Trait`, found `Box<Trait>`
+    // FIXME (#22405): Replace `Box::new` with `box` here when/if possible.
+    let x: Box<Trait> = Box::new(Foo);
+    let _y: &Trait = x; //~  ERROR mismatched types
+                        //~| expected `&Trait`
+                        //~| found `Box<Trait>`
+                        //~| expected &-ptr
+                        //~| found box
 }
-

@@ -11,18 +11,19 @@
 // Test that we detect nested calls that could free pointers evaluated
 // for earlier arguments.
 
+#![feature(box_syntax)]
 
-fn rewrite(v: &mut Box<uint>) -> uint {
+fn rewrite(v: &mut Box<usize>) -> usize {
     *v = box 22;
     **v
 }
 
-fn add(v: &uint, w: uint) -> uint {
+fn add(v: &usize, w: usize) -> usize {
     *v + w
 }
 
 fn implicit() {
-    let mut a = box 1;
+    let mut a: Box<_> = box 1;
 
     // Note the danger here:
     //
@@ -35,7 +36,7 @@ fn implicit() {
 }
 
 fn explicit() {
-    let mut a = box 1;
+    let mut a: Box<_> = box 1;
     add(
         &*a,
         rewrite(&mut a)); //~ ERROR cannot borrow

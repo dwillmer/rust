@@ -8,7 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#[deriving(Sync,Send,Copy)]
+// pretty-expanded FIXME #23616
+
+#[derive(Copy, Clone)]
 struct Test;
 
 pub fn main() {}

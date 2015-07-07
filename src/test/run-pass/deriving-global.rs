@@ -8,33 +8,34 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(rand, rustc_private)]
+
 extern crate serialize;
-extern crate rand;
 
 mod submod {
     // if any of these are implemented without global calls for any
     // function calls, then being in a submodule will (correctly)
     // cause errors about unrecognised module `std` (or `extra`)
-    #[deriving(PartialEq, PartialOrd, Eq, Ord,
+    #[derive(PartialEq, PartialOrd, Eq, Ord,
                Hash,
                Clone,
-               Show, Rand,
+               Debug,
                Encodable, Decodable)]
-    enum A { A1(uint), A2(int) }
+    enum A { A1(usize), A2(isize) }
 
-    #[deriving(PartialEq, PartialOrd, Eq, Ord,
+    #[derive(PartialEq, PartialOrd, Eq, Ord,
                Hash,
                Clone,
-               Show, Rand,
+               Debug,
                Encodable, Decodable)]
-    struct B { x: uint, y: int }
+    struct B { x: usize, y: isize }
 
-    #[deriving(PartialEq, PartialOrd, Eq, Ord,
+    #[derive(PartialEq, PartialOrd, Eq, Ord,
                Hash,
                Clone,
-               Show, Rand,
+               Debug,
                Encodable, Decodable)]
-    struct C(uint, int);
+    struct C(usize, isize);
 
 }
 

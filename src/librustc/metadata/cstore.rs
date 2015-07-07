@@ -13,27 +13,43 @@
 // The crate store - a central repo for information collected about external
 // crates and libraries
 
-use back::svh::Svh;
-use metadata::decoder;
-use metadata::loader;
+pub use self::MetadataBlob::*;
+pub use self::LinkagePreference::*;
+pub use self::NativeLibraryKind::*;
 
-use std::cell::RefCell;
-use std::c_vec::CVec;
+use back::svh::Svh;
+use metadata::{creader, decoder, loader};
+use session::search_paths::PathKind;
+use util::nodemap::{FnvHashMap, NodeMap};
+
+use std::cell::{RefCell, Ref};
 use std::rc::Rc;
-use std::collections::HashMap;
+use std::path::PathBuf;
+use flate::Bytes;
 use syntax::ast;
-use syntax::codemap::Span;
+use syntax::codemap;
 use syntax::parse::token::IdentInterner;
 
 // A map from external crate numbers (as decoded from some crate file) to
 // local crate numbers (as generated during this session). Each external
 // crate may refer to types in other external crates, and each has their
 // own crate numbers.
-pub type cnum_map = HashMap<ast::CrateNum, ast::CrateNum>;
+pub type cnum_map = FnvHashMap<ast::CrateNum, ast::CrateNum>;
 
 pub enum MetadataBlob {
-    MetadataVec(CVec<u8>),
+    MetadataVec(Bytes),
     MetadataArchive(loader::ArchiveMetadata),
+}
+
+/// Holds information about a codemap::FileMap imported from another crate.
+/// See creader::import_codemap() for more information.
+pub struct ImportedFileMap {
+    /// This FileMap's byte-offset within the codemap of its original crate
+    pub original_start_pos: codemap::BytePos,
+    /// The end of this FileMap within the codemap of its original crate
+    pub original_end_pos: codemap::BytePos,
+    /// The imported FileMap's representation within the local codemap
+    pub translated_filemap: Rc<codemap::FileMap>
 }
 
 pub struct crate_metadata {
@@ -41,48 +57,49 @@ pub struct crate_metadata {
     pub data: MetadataBlob,
     pub cnum_map: cnum_map,
     pub cnum: ast::CrateNum,
-    pub span: Span,
+    pub codemap_import_info: RefCell<Vec<ImportedFileMap>>,
+    pub span: codemap::Span,
 }
 
-#[deriving(Show, PartialEq, Clone)]
+#[derive(Copy, Debug, PartialEq, Clone)]
 pub enum LinkagePreference {
     RequireDynamic,
     RequireStatic,
 }
 
-#[deriving(PartialEq, FromPrimitive)]
-pub enum NativeLibaryKind {
-    NativeStatic,    // native static library (.a archive)
-    NativeFramework, // OSX-specific
-    NativeUnknown,   // default way to specify a dynamic library
+enum_from_u32! {
+    #[derive(Copy, Clone, PartialEq)]
+    pub enum NativeLibraryKind {
+        NativeStatic,    // native static library (.a archive)
+        NativeFramework, // OSX-specific
+        NativeUnknown,   // default way to specify a dynamic library
+    }
 }
 
 // Where a crate came from on the local filesystem. One of these two options
 // must be non-None.
-#[deriving(PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct CrateSource {
-    pub dylib: Option<Path>,
-    pub rlib: Option<Path>,
+    pub dylib: Option<(PathBuf, PathKind)>,
+    pub rlib: Option<(PathBuf, PathKind)>,
     pub cnum: ast::CrateNum,
 }
 
 pub struct CStore {
-    metas: RefCell<HashMap<ast::CrateNum, Rc<crate_metadata>>>,
-    extern_mod_crate_map: RefCell<extern_mod_crate_map>,
+    metas: RefCell<FnvHashMap<ast::CrateNum, Rc<crate_metadata>>>,
+    /// Map from NodeId's of local extern crate statements to crate numbers
+    extern_mod_crate_map: RefCell<NodeMap<ast::CrateNum>>,
     used_crate_sources: RefCell<Vec<CrateSource>>,
-    used_libraries: RefCell<Vec<(String, NativeLibaryKind)>>,
+    used_libraries: RefCell<Vec<(String, NativeLibraryKind)>>,
     used_link_args: RefCell<Vec<String>>,
     pub intr: Rc<IdentInterner>,
 }
 
-// Map from NodeId's of local extern crate statements to crate numbers
-type extern_mod_crate_map = HashMap<ast::NodeId, ast::CrateNum>;
-
 impl CStore {
     pub fn new(intr: Rc<IdentInterner>) -> CStore {
         CStore {
-            metas: RefCell::new(HashMap::new()),
-            extern_mod_crate_map: RefCell::new(HashMap::new()),
+            metas: RefCell::new(FnvHashMap()),
+            extern_mod_crate_map: RefCell::new(FnvHashMap()),
             used_crate_sources: RefCell::new(Vec::new()),
             used_libraries: RefCell::new(Vec::new()),
             used_link_args: RefCell::new(Vec::new()),
@@ -95,7 +112,7 @@ impl CStore {
     }
 
     pub fn get_crate_data(&self, cnum: ast::CrateNum) -> Rc<crate_metadata> {
-        self.metas.borrow().get(&cnum).clone()
+        self.metas.borrow().get(&cnum).unwrap().clone()
     }
 
     pub fn get_crate_hash(&self, cnum: ast::CrateNum) -> Svh {
@@ -107,16 +124,18 @@ impl CStore {
         self.metas.borrow_mut().insert(cnum, data);
     }
 
-    pub fn iter_crate_data(&self, i: |ast::CrateNum, &crate_metadata|) {
+    pub fn iter_crate_data<I>(&self, mut i: I) where
+        I: FnMut(ast::CrateNum, &crate_metadata),
+    {
         for (&k, v) in self.metas.borrow().iter() {
             i(k, &**v);
         }
     }
 
     /// Like `iter_crate_data`, but passes source paths (if available) as well.
-    pub fn iter_crate_data_origins(&self, i: |ast::CrateNum,
-                                              &crate_metadata,
-                                              Option<CrateSource>|) {
+    pub fn iter_crate_data_origins<I>(&self, mut i: I) where
+        I: FnMut(ast::CrateNum, &crate_metadata, Option<CrateSource>),
+    {
         for (&k, v) in self.metas.borrow().iter() {
             let origin = self.get_used_crate_source(k);
             origin.as_ref().map(|cs| { assert!(k == cs.cnum); });
@@ -134,8 +153,7 @@ impl CStore {
     pub fn get_used_crate_source(&self, cnum: ast::CrateNum)
                                      -> Option<CrateSource> {
         self.used_crate_sources.borrow_mut()
-            .iter().find(|source| source.cnum == cnum)
-            .map(|source| source.clone())
+            .iter().find(|source| source.cnum == cnum).cloned()
     }
 
     pub fn reset(&self) {
@@ -156,13 +174,13 @@ impl CStore {
     // topological sort of all crates putting the leaves at the right-most
     // positions.
     pub fn get_used_crates(&self, prefer: LinkagePreference)
-                           -> Vec<(ast::CrateNum, Option<Path>)> {
+                           -> Vec<(ast::CrateNum, Option<PathBuf>)> {
         let mut ordering = Vec::new();
         fn visit(cstore: &CStore, cnum: ast::CrateNum,
                  ordering: &mut Vec<ast::CrateNum>) {
-            if ordering.as_slice().contains(&cnum) { return }
+            if ordering.contains(&cnum) { return }
             let meta = cstore.get_crate_data(cnum);
-            for (_, &dep) in meta.cnum_map.iter() {
+            for (_, &dep) in &meta.cnum_map {
                 visit(cstore, dep, ordering);
             }
             ordering.push(cnum);
@@ -170,28 +188,28 @@ impl CStore {
         for (&num, _) in self.metas.borrow().iter() {
             visit(self, num, &mut ordering);
         }
-        ordering.as_mut_slice().reverse();
-        let ordering = ordering.as_slice();
+        ordering.reverse();
         let mut libs = self.used_crate_sources.borrow()
             .iter()
             .map(|src| (src.cnum, match prefer {
-                RequireDynamic => src.dylib.clone(),
-                RequireStatic => src.rlib.clone(),
+                RequireDynamic => src.dylib.clone().map(|p| p.0),
+                RequireStatic => src.rlib.clone().map(|p| p.0),
             }))
-            .collect::<Vec<(ast::CrateNum, Option<Path>)>>();
+            .collect::<Vec<_>>();
         libs.sort_by(|&(a, _), &(b, _)| {
             ordering.position_elem(&a).cmp(&ordering.position_elem(&b))
         });
         libs
     }
 
-    pub fn add_used_library(&self, lib: String, kind: NativeLibaryKind) {
+    pub fn add_used_library(&self, lib: String, kind: NativeLibraryKind) {
         assert!(!lib.is_empty());
         self.used_libraries.borrow_mut().push((lib, kind));
     }
 
     pub fn get_used_libraries<'a>(&'a self)
-                              -> &'a RefCell<Vec<(String, NativeLibaryKind)> > {
+                              -> &'a RefCell<Vec<(String,
+                                                  NativeLibraryKind)>> {
         &self.used_libraries
     }
 
@@ -213,7 +231,7 @@ impl CStore {
 
     pub fn find_extern_mod_stmt_cnum(&self, emod_id: ast::NodeId)
                                      -> Option<ast::CrateNum> {
-        self.extern_mod_crate_map.borrow().find(&emod_id).map(|x| *x)
+        self.extern_mod_crate_map.borrow().get(&emod_id).cloned()
     }
 }
 
@@ -221,13 +239,40 @@ impl crate_metadata {
     pub fn data<'a>(&'a self) -> &'a [u8] { self.data.as_slice() }
     pub fn name(&self) -> String { decoder::get_crate_name(self.data()) }
     pub fn hash(&self) -> Svh { decoder::get_crate_hash(self.data()) }
+    pub fn imported_filemaps<'a>(&'a self, codemap: &codemap::CodeMap)
+                                 -> Ref<'a, Vec<ImportedFileMap>> {
+        let filemaps = self.codemap_import_info.borrow();
+        if filemaps.is_empty() {
+            drop(filemaps);
+            let filemaps = creader::import_codemap(codemap, &self.data);
+
+            // This shouldn't borrow twice, but there is no way to downgrade RefMut to Ref.
+            *self.codemap_import_info.borrow_mut() = filemaps;
+            self.codemap_import_info.borrow()
+        } else {
+            filemaps
+        }
+    }
 }
 
 impl MetadataBlob {
     pub fn as_slice<'a>(&'a self) -> &'a [u8] {
-        match *self {
-            MetadataVec(ref vec) => vec.as_slice(),
+        let slice = match *self {
+            MetadataVec(ref vec) => &vec[..],
             MetadataArchive(ref ar) => ar.as_slice(),
+        };
+        if slice.len() < 4 {
+            &[] // corrupt metadata
+        } else {
+            let len = (((slice[0] as u32) << 24) |
+                       ((slice[1] as u32) << 16) |
+                       ((slice[2] as u32) << 8) |
+                       ((slice[3] as u32) << 0)) as usize;
+            if len + 4 <= slice.len() {
+                &slice[4.. len + 4]
+            } else {
+                &[] // corrupt or old metadata
+            }
         }
     }
 }

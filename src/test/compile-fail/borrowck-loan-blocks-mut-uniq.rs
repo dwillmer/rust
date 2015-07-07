@@ -8,12 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn borrow(v: &int, f: |x: &int|) {
+#![feature(box_syntax)]
+
+fn borrow<F>(v: &isize, f: F) where F: FnOnce(&isize) {
     f(v);
 }
 
 fn box_imm() {
-    let mut v = box 3;
+    let mut v: Box<_> = box 3;
     borrow(&*v,
            |w| { //~ ERROR cannot borrow `v` as mutable
             v = box 4;

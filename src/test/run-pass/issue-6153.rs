@@ -9,7 +9,8 @@
 // except according to those terms.
 
 
-fn swap(f: |Vec<int> | -> Vec<int> ) -> Vec<int> {
+
+fn swap<F>(f: F) -> Vec<isize> where F: FnOnce(Vec<isize>) -> Vec<isize> {
     let x = vec!(1, 2, 3);
     f(x)
 }

@@ -8,17 +8,19 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// exec-env:RUST_LOG=logging-enabled=info
+// exec-env:RUST_LOG=logging_enabled=info
 
-#![feature(phase)]
-#[phase(plugin, link)]
+
+#![feature(rustc_private)]
+
+#[macro_use]
 extern crate log;
 
 pub fn main() {
     if log_enabled!(log::DEBUG) {
-        fail!("what?! debugging?");
+        panic!("what?! debugging?");
     }
     if !log_enabled!(log::INFO) {
-        fail!("what?! no info?");
+        panic!("what?! no info?");
     }
 }

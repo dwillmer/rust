@@ -23,6 +23,7 @@ mod src {
     pub mod hidden_core {
         use super::aliases::B;
 
+        #[derive(Copy, Clone)]
         pub struct A;
 
         pub fn make() -> B { A }

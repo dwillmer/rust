@@ -8,16 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-struct A { pub i: int }
+struct A { pub i: isize }
 pub enum C { pub Variant }      //~ ERROR: unnecessary `pub`
 
 pub trait E {
-    pub fn foo() {}             //~ ERROR: unnecessary visibility
+    fn foo(&self);
 }
-trait F { pub fn foo() {} }     //~ ERROR: unnecessary visibility
 
 impl E for A {
-    pub fn foo() {}             //~ ERROR: unnecessary visibility
+    pub fn foo(&self) {}             //~ ERROR: unnecessary visibility
 }
 
 fn main() {}

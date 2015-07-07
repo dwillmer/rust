@@ -9,12 +9,13 @@
 // except according to those terms.
 
 
-use std::gc::GC;
+#![allow(unknown_features)]
+#![feature(box_syntax)]
 
-fn foo(x: &uint) -> &uint { x }
-fn bar(x: &uint) -> uint { *x }
+fn foo(x: &usize) -> &usize { x }
+fn bar(x: &usize) -> usize { *x }
 
 pub fn main() {
-    let p = box(GC) 3u;
+    let p: Box<_> = box 3;
     assert_eq!(bar(foo(&*p)), 3);
 }

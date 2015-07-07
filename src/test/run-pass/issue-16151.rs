@@ -8,9 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+
 use std::mem;
 
-static mut DROP_COUNT: uint = 0;
+static mut DROP_COUNT: usize = 0;
 
 struct Fragment;
 
@@ -26,7 +27,7 @@ fn main() {
     {
         let mut fragments = vec![Fragment, Fragment, Fragment];
         let _new_fragments: Vec<Fragment> = mem::replace(&mut fragments, vec![])
-            .move_iter()
+            .into_iter()
             .skip_while(|_fragment| {
                 true
             }).collect();
@@ -35,4 +36,3 @@ fn main() {
         assert_eq!(DROP_COUNT, 3);
     }
 }
-

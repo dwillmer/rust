@@ -9,131 +9,222 @@
 // except according to those terms.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::gc::Gc;
+use std::collections::BTreeMap;
+use std::env;
+
 use ast;
 use ast::{Ident, Name, TokenTree};
 use codemap::Span;
-use ext::base::{ExtCtxt, MacExpr, MacItem, MacResult};
+use ext::base::{ExtCtxt, MacEager, MacResult};
 use ext::build::AstBuilder;
 use parse::token;
+use ptr::P;
+use util::small_vector::SmallVector;
 
-local_data_key!(registered_diagnostics: RefCell<HashMap<Name, Option<Name>>>)
-local_data_key!(used_diagnostics: RefCell<HashMap<Name, Span>>)
+use diagnostics::metadata::output_metadata;
 
-fn with_registered_diagnostics<T>(f: |&mut HashMap<Name, Option<Name>>| -> T) -> T {
-    match registered_diagnostics.get() {
-        Some(cell) => f(cell.borrow_mut().deref_mut()),
-        None => {
-            let mut map = HashMap::new();
-            let value = f(&mut map);
-            registered_diagnostics.replace(Some(RefCell::new(map)));
-            value
-        }
+// Maximum width of any line in an extended error description (inclusive).
+const MAX_DESCRIPTION_WIDTH: usize = 80;
+
+thread_local! {
+    static REGISTERED_DIAGNOSTICS: RefCell<ErrorMap> = {
+        RefCell::new(BTreeMap::new())
     }
 }
 
-fn with_used_diagnostics<T>(f: |&mut HashMap<Name, Span>| -> T) -> T {
-    match used_diagnostics.get() {
-        Some(cell) => f(cell.borrow_mut().deref_mut()),
-        None => {
-            let mut map = HashMap::new();
-            let value = f(&mut map);
-            used_diagnostics.replace(Some(RefCell::new(map)));
-            value
-        }
-    }
+/// Error information type.
+pub struct ErrorInfo {
+    pub description: Option<Name>,
+    pub use_site: Option<Span>
+}
+
+/// Mapping from error codes to metadata.
+pub type ErrorMap = BTreeMap<Name, ErrorInfo>;
+
+fn with_registered_diagnostics<T, F>(f: F) -> T where
+    F: FnOnce(&mut ErrorMap) -> T,
+{
+    REGISTERED_DIAGNOSTICS.with(move |slot| {
+        f(&mut *slot.borrow_mut())
+    })
 }
 
 pub fn expand_diagnostic_used<'cx>(ecx: &'cx mut ExtCtxt,
                                    span: Span,
                                    token_tree: &[TokenTree])
                                    -> Box<MacResult+'cx> {
-    let code = match token_tree {
-        [ast::TTTok(_, token::IDENT(code, _))] => code,
+    let code = match (token_tree.len(), token_tree.get(0)) {
+        (1, Some(&ast::TtToken(_, token::Ident(code, _)))) => code,
         _ => unreachable!()
     };
+
     with_registered_diagnostics(|diagnostics| {
-        if !diagnostics.contains_key(&code.name) {
-            ecx.span_err(span, format!(
-                "unknown diagnostic code {}; add to librustc/diagnostics.rs",
-                token::get_ident(code).get()
-            ).as_slice());
-        }
-        ()
-    });
-    with_used_diagnostics(|diagnostics| {
-        match diagnostics.swap(code.name, span) {
-            Some(previous_span) => {
-                ecx.span_warn(span, format!(
-                    "diagnostic code {} already used", token::get_ident(code).get()
-                ).as_slice());
+        match diagnostics.get_mut(&code.name) {
+            // Previously used errors.
+            Some(&mut ErrorInfo { description: _, use_site: Some(previous_span) }) => {
+                ecx.span_warn(span, &format!(
+                    "diagnostic code {} already used", &token::get_ident(code)
+                ));
                 ecx.span_note(previous_span, "previous invocation");
-            },
-            None => ()
+            }
+            // Newly used errors.
+            Some(ref mut info) => {
+                info.use_site = Some(span);
+            }
+            // Unregistered errors.
+            None => {
+                ecx.span_err(span, &format!(
+                    "used diagnostic code {} not registered", &token::get_ident(code)
+                ));
+            }
         }
-        ()
     });
-    MacExpr::new(quote_expr!(ecx, ()))
+    MacEager::expr(ecx.expr_tuple(span, Vec::new()))
 }
 
 pub fn expand_register_diagnostic<'cx>(ecx: &'cx mut ExtCtxt,
                                        span: Span,
                                        token_tree: &[TokenTree])
                                        -> Box<MacResult+'cx> {
-    let (code, description) = match token_tree {
-        [ast::TTTok(_, token::IDENT(ref code, _))] => {
+    let (code, description) = match (
+        token_tree.len(),
+        token_tree.get(0),
+        token_tree.get(1),
+        token_tree.get(2)
+    ) {
+        (1, Some(&ast::TtToken(_, token::Ident(ref code, _))), None, None) => {
             (code, None)
         },
-        [ast::TTTok(_, token::IDENT(ref code, _)),
-         ast::TTTok(_, token::COMMA),
-         ast::TTTok(_, token::LIT_STR_RAW(description, _))] => {
+        (3, Some(&ast::TtToken(_, token::Ident(ref code, _))),
+            Some(&ast::TtToken(_, token::Comma)),
+            Some(&ast::TtToken(_, token::Literal(token::StrRaw(description, _), None)))) => {
             (code, Some(description))
         }
         _ => unreachable!()
     };
-    with_registered_diagnostics(|diagnostics| {
-        if !diagnostics.insert(code.name, description) {
-            ecx.span_err(span, format!(
-                "diagnostic code {} already registered", token::get_ident(*code).get()
-            ).as_slice());
+
+    // Check that the description starts and ends with a newline and doesn't
+    // overflow the maximum line width.
+    description.map(|raw_msg| {
+        let msg = raw_msg.as_str();
+        if !msg.starts_with("\n") || !msg.ends_with("\n") {
+            ecx.span_err(span, &format!(
+                "description for error code {} doesn't start and end with a newline",
+                token::get_ident(*code)
+            ));
+        }
+
+        // URLs can be unavoidably longer than the line limit, so we allow them.
+        // Allowed format is: `[name]: http://rust-lang.org/`
+        let is_url = |l: &str| l.starts_with('[') && l.contains("]:") && l.contains("http");
+
+        if msg.lines().any(|line| line.len() > MAX_DESCRIPTION_WIDTH && !is_url(line)) {
+            ecx.span_err(span, &format!(
+                "description for error code {} contains a line longer than {} characters.\n\
+                 if you're inserting a long URL use the footnote style to bypass this check.",
+                token::get_ident(*code), MAX_DESCRIPTION_WIDTH
+            ));
         }
     });
-    let sym = Ident::new(token::gensym((
-        "__register_diagnostic_".to_string() + token::get_ident(*code).get()
-    ).as_slice()));
-    MacItem::new(quote_item!(ecx, mod $sym {}).unwrap())
+    // Add the error to the map.
+    with_registered_diagnostics(|diagnostics| {
+        let info = ErrorInfo {
+            description: description,
+            use_site: None
+        };
+        if diagnostics.insert(code.name, info).is_some() {
+            ecx.span_err(span, &format!(
+                "diagnostic code {} already registered", &token::get_ident(*code)
+            ));
+        }
+    });
+    let sym = Ident::new(token::gensym(&(
+        "__register_diagnostic_".to_string() + &token::get_ident(*code)
+    )));
+    MacEager::items(SmallVector::many(vec![
+        ecx.item_mod(
+            span,
+            span,
+            sym,
+            Vec::new(),
+            Vec::new()
+        )
+    ]))
 }
 
 pub fn expand_build_diagnostic_array<'cx>(ecx: &'cx mut ExtCtxt,
                                           span: Span,
                                           token_tree: &[TokenTree])
                                           -> Box<MacResult+'cx> {
-    let name = match token_tree {
-        [ast::TTTok(_, token::IDENT(ref name, _))] => name,
+    assert_eq!(token_tree.len(), 3);
+    let (crate_name, name) = match (&token_tree[0], &token_tree[2]) {
+        (
+            // Crate name.
+            &ast::TtToken(_, token::Ident(ref crate_name, _)),
+            // DIAGNOSTICS ident.
+            &ast::TtToken(_, token::Ident(ref name, _))
+        ) => (crate_name.as_str(), name),
         _ => unreachable!()
     };
 
-    let (count, expr) = with_used_diagnostics(|diagnostics_in_use| {
-        with_registered_diagnostics(|diagnostics| {
-            let descriptions: Vec<Gc<ast::Expr>> = diagnostics
-                .iter().filter_map(|(code, description)| {
-                if !diagnostics_in_use.contains_key(code) {
-                    ecx.span_warn(span, format!(
-                        "diagnostic code {} never used", token::get_name(*code).get()
-                    ).as_slice());
-                }
-                description.map(|description| {
-                    ecx.expr_tuple(span, vec![
-                        ecx.expr_str(span, token::get_name(*code)),
-                        ecx.expr_str(span, token::get_name(description))
-                    ])
-                })
-            }).collect();
-            (descriptions.len(), ecx.expr_vec(span, descriptions))
-        })
+    // Output error metadata to `tmp/extended-errors/<target arch>/<crate name>.json`
+    let target_triple = env::var("CFG_COMPILER_HOST_TRIPLE")
+        .ok().expect("unable to determine target arch from $CFG_COMPILER_HOST_TRIPLE");
+
+    with_registered_diagnostics(|diagnostics| {
+        if let Err(e) = output_metadata(ecx, &target_triple, crate_name, &diagnostics) {
+            ecx.span_bug(span, &format!(
+                "error writing metadata for triple `{}` and crate `{}`, error: {}, cause: {:?}",
+                target_triple, crate_name, e.description(), e.cause()
+            ));
+        }
     });
-    MacItem::new(quote_item!(ecx,
-        pub static $name: [(&'static str, &'static str), ..$count] = $expr;
-    ).unwrap())
+
+    // Construct the output expression.
+    let (count, expr) =
+        with_registered_diagnostics(|diagnostics| {
+            let descriptions: Vec<P<ast::Expr>> =
+                diagnostics.iter().filter_map(|(code, info)| {
+                    info.description.map(|description| {
+                        ecx.expr_tuple(span, vec![
+                            ecx.expr_str(span, token::get_name(*code)),
+                            ecx.expr_str(span, token::get_name(description))
+                        ])
+                    })
+                }).collect();
+            (descriptions.len(), ecx.expr_vec(span, descriptions))
+        });
+
+    let static_ = ecx.lifetime(span, ecx.name_of("'static"));
+    let ty_str = ecx.ty_rptr(
+        span,
+        ecx.ty_ident(span, ecx.ident_of("str")),
+        Some(static_),
+        ast::MutImmutable,
+    );
+
+    let ty = ecx.ty(
+        span,
+        ast::TyFixedLengthVec(
+            ecx.ty(
+                span,
+                ast::TyTup(vec![ty_str.clone(), ty_str])
+            ),
+            ecx.expr_usize(span, count),
+        ),
+    );
+
+    MacEager::items(SmallVector::many(vec![
+        P(ast::Item {
+            ident: name.clone(),
+            attrs: Vec::new(),
+            id: ast::DUMMY_NODE_ID,
+            node: ast::ItemConst(
+                ty,
+                expr,
+            ),
+            vis: ast::Public,
+            span: span,
+        })
+    ]))
 }

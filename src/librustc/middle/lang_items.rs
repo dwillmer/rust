@@ -19,11 +19,14 @@
 //
 // * Functions called by the compiler itself.
 
+pub use self::LangItem::*;
 
-use driver::session::Session;
+use session::Session;
 use metadata::csearch::each_lang_item;
 use middle::ty;
 use middle::weak_lang_items;
+use util::nodemap::FnvHashMap;
+
 use syntax::ast;
 use syntax::ast_util::local_def;
 use syntax::attr::AttrMetaMethods;
@@ -32,7 +35,6 @@ use syntax::parse::token::InternedString;
 use syntax::visit::Visitor;
 use syntax::visit;
 
-use std::collections::HashMap;
 use std::iter::Enumerate;
 use std::slice;
 
@@ -43,9 +45,12 @@ macro_rules! lets_do_this {
         $( $variant:ident, $name:expr, $method:ident; )*
     ) => {
 
-#[deriving(FromPrimitive, PartialEq, Eq, Hash)]
-pub enum LangItem {
-    $($variant),*
+
+enum_from_u32! {
+    #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+    pub enum LangItem {
+        $($variant,)*
+    }
 }
 
 pub struct LanguageItems {
@@ -63,12 +68,12 @@ impl LanguageItems {
         }
     }
 
-    pub fn items<'a>(&'a self) -> Enumerate<slice::Items<'a, Option<ast::DefId>>> {
+    pub fn items<'a>(&'a self) -> Enumerate<slice::Iter<'a, Option<ast::DefId>>> {
         self.items.iter().enumerate()
     }
 
-    pub fn item_name(index: uint) -> &'static str {
-        let item: Option<LangItem> = FromPrimitive::from_uint(index);
+    pub fn item_name(index: usize) -> &'static str {
+        let item: Option<LangItem> = LangItem::from_u32(index as u32);
         match item {
             $( Some($variant) => $name, )*
             None => "???"
@@ -76,12 +81,23 @@ impl LanguageItems {
     }
 
     pub fn require(&self, it: LangItem) -> Result<ast::DefId, String> {
-        match self.items.get(it as uint) {
-            &Some(id) => Ok(id),
-            &None => {
+        match self.items[it as usize] {
+            Some(id) => Ok(id),
+            None => {
                 Err(format!("requires `{}` lang_item",
-                            LanguageItems::item_name(it as uint)))
+                            LanguageItems::item_name(it as usize)))
             }
+        }
+    }
+
+    pub fn from_builtin_kind(&self, bound: ty::BuiltinBound)
+                             -> Result<ast::DefId, String>
+    {
+        match bound {
+            ty::BoundSend => self.require(SendTraitLangItem),
+            ty::BoundSized => self.require(SizedTraitLangItem),
+            ty::BoundCopy => self.require(CopyTraitLangItem),
+            ty::BoundSync => self.require(SyncTraitLangItem),
         }
     }
 
@@ -99,10 +115,26 @@ impl LanguageItems {
         }
     }
 
+    pub fn fn_trait_kind(&self, id: ast::DefId) -> Option<ty::ClosureKind> {
+        let def_id_kinds = [
+            (self.fn_trait(), ty::FnClosureKind),
+            (self.fn_mut_trait(), ty::FnMutClosureKind),
+            (self.fn_once_trait(), ty::FnOnceClosureKind),
+            ];
+
+        for &(opt_def_id, kind) in &def_id_kinds {
+            if Some(id) == opt_def_id {
+                return Some(kind);
+            }
+        }
+
+        None
+    }
+
     $(
         #[allow(dead_code)]
         pub fn $method(&self) -> Option<ast::DefId> {
-            *self.items.get($variant as uint)
+            self.items[$variant as usize]
         }
     )*
 }
@@ -112,34 +144,28 @@ struct LanguageItemCollector<'a> {
 
     session: &'a Session,
 
-    item_refs: HashMap<&'static str, uint>,
+    item_refs: FnvHashMap<&'static str, usize>,
 }
 
-impl<'a> Visitor<()> for LanguageItemCollector<'a> {
-    fn visit_item(&mut self, item: &ast::Item, _: ()) {
-        match extract(item.attrs.as_slice()) {
-            Some(value) => {
-                let item_index = self.item_refs.find_equiv(&value).map(|x| *x);
+impl<'a, 'v> Visitor<'v> for LanguageItemCollector<'a> {
+    fn visit_item(&mut self, item: &ast::Item) {
+        if let Some(value) = extract(&item.attrs) {
+            let item_index = self.item_refs.get(&value[..]).cloned();
 
-                match item_index {
-                    Some(item_index) => {
-                        self.collect_item(item_index, local_def(item.id), item.span)
-                    }
-                    None => {}
-                }
+            if let Some(item_index) = item_index {
+                self.collect_item(item_index, local_def(item.id), item.span)
             }
-            None => {}
         }
 
-        visit::walk_item(self, item, ());
+        visit::walk_item(self, item);
     }
 }
 
 impl<'a> LanguageItemCollector<'a> {
     pub fn new(session: &'a Session) -> LanguageItemCollector<'a> {
-        let mut item_refs = HashMap::new();
+        let mut item_refs = FnvHashMap();
 
-        $( item_refs.insert($name, $variant as uint); )*
+        $( item_refs.insert($name, $variant as usize); )*
 
         LanguageItemCollector {
             session: session,
@@ -148,25 +174,25 @@ impl<'a> LanguageItemCollector<'a> {
         }
     }
 
-    pub fn collect_item(&mut self, item_index: uint,
+    pub fn collect_item(&mut self, item_index: usize,
                         item_def_id: ast::DefId, span: Span) {
         // Check for duplicates.
-        match self.items.items.get(item_index) {
-            &Some(original_def_id) if original_def_id != item_def_id => {
+        match self.items.items[item_index] {
+            Some(original_def_id) if original_def_id != item_def_id => {
                 span_err!(self.session, span, E0152,
                     "duplicate entry for `{}`", LanguageItems::item_name(item_index));
             }
-            &Some(_) | &None => {
+            Some(_) | None => {
                 // OK.
             }
         }
 
         // Matched.
-        *self.items.items.get_mut(item_index) = Some(item_def_id);
+        self.items.items[item_index] = Some(item_def_id);
     }
 
     pub fn collect_local_language_items(&mut self, krate: &ast::Crate) {
-        visit::walk_crate(self, krate, ());
+        visit::walk_crate(self, krate);
     }
 
     pub fn collect_external_language_items(&mut self) {
@@ -187,7 +213,7 @@ impl<'a> LanguageItemCollector<'a> {
 }
 
 pub fn extract(attrs: &[ast::Attribute]) -> Option<InternedString> {
-    for attribute in attrs.iter() {
+    for attribute in attrs {
         match attribute.value_str() {
             Some(ref value) if attribute.check_name("lang") => {
                 return Some(value.clone());
@@ -215,12 +241,33 @@ pub fn collect_language_items(krate: &ast::Crate,
 
 lets_do_this! {
 //  Variant name,                    Name,                      Method name;
+    CharImplItem,                    "char",                    char_impl;
+    StrImplItem,                     "str",                     str_impl;
+    SliceImplItem,                   "slice",                   slice_impl;
+    ConstPtrImplItem,                "const_ptr",               const_ptr_impl;
+    MutPtrImplItem,                  "mut_ptr",                 mut_ptr_impl;
+    I8ImplItem,                      "i8",                      i8_impl;
+    I16ImplItem,                     "i16",                     i16_impl;
+    I32ImplItem,                     "i32",                     i32_impl;
+    I64ImplItem,                     "i64",                     i64_impl;
+    IsizeImplItem,                   "isize",                   isize_impl;
+    U8ImplItem,                      "u8",                      u8_impl;
+    U16ImplItem,                     "u16",                     u16_impl;
+    U32ImplItem,                     "u32",                     u32_impl;
+    U64ImplItem,                     "u64",                     u64_impl;
+    UsizeImplItem,                   "usize",                   usize_impl;
+    F32ImplItem,                     "f32",                     f32_impl;
+    F64ImplItem,                     "f64",                     f64_impl;
+
     SendTraitLangItem,               "send",                    send_trait;
     SizedTraitLangItem,              "sized",                   sized_trait;
+    UnsizeTraitLangItem,             "unsize",                  unsize_trait;
     CopyTraitLangItem,               "copy",                    copy_trait;
     SyncTraitLangItem,               "sync",                    sync_trait;
 
     DropTraitLangItem,               "drop",                    drop_trait;
+
+    CoerceUnsizedTraitLangItem,      "coerce_unsized",          coerce_unsized_trait;
 
     AddTraitLangItem,                "add",                     add_trait;
     SubTraitLangItem,                "sub",                     sub_trait;
@@ -236,8 +283,12 @@ lets_do_this! {
     ShrTraitLangItem,                "shr",                     shr_trait;
     IndexTraitLangItem,              "index",                   index_trait;
     IndexMutTraitLangItem,           "index_mut",               index_mut_trait;
+    RangeStructLangItem,             "range",                   range_struct;
+    RangeFromStructLangItem,         "range_from",              range_from_struct;
+    RangeToStructLangItem,           "range_to",                range_to_struct;
+    RangeFullStructLangItem,         "range_full",              range_full_struct;
 
-    UnsafeTypeLangItem,              "unsafe",                  unsafe_type;
+    UnsafeCellTypeLangItem,          "unsafe_cell",             unsafe_cell_type;
 
     DerefTraitLangItem,              "deref",                   deref_trait;
     DerefMutTraitLangItem,           "deref_mut",               deref_mut_trait;
@@ -251,55 +302,45 @@ lets_do_this! {
 
     StrEqFnLangItem,                 "str_eq",                  str_eq_fn;
 
-    // A number of failure-related lang items. The `fail_` item corresponds to
-    // divide-by-zero and various failure cases with `match`. The
-    // `fail_bounds_check` item is for indexing arrays.
+    // A number of panic-related lang items. The `panic` item corresponds to
+    // divide-by-zero and various panic cases with `match`. The
+    // `panic_bounds_check` item is for indexing arrays.
     //
     // The `begin_unwind` lang item has a predefined symbol name and is sort of
     // a "weak lang item" in the sense that a crate is not required to have it
     // defined to use it, but a final product is required to define it
     // somewhere. Additionally, there are restrictions on crates that use a weak
     // lang item, but do not have it defined.
-    FailFnLangItem,                  "fail_",                   fail_fn;
-    FailBoundsCheckFnLangItem,       "fail_bounds_check",       fail_bounds_check_fn;
-    BeginUnwindLangItem,             "begin_unwind",            begin_unwind;
+    PanicFnLangItem,                 "panic",                   panic_fn;
+    PanicBoundsCheckFnLangItem,      "panic_bounds_check",      panic_bounds_check_fn;
+    PanicFmtLangItem,                "panic_fmt",               panic_fmt;
 
     ExchangeMallocFnLangItem,        "exchange_malloc",         exchange_malloc_fn;
-    ClosureExchangeMallocFnLangItem, "closure_exchange_malloc", closure_exchange_malloc_fn;
     ExchangeFreeFnLangItem,          "exchange_free",           exchange_free_fn;
-    MallocFnLangItem,                "malloc",                  malloc_fn;
-    FreeFnLangItem,                  "free",                    free_fn;
     StrDupUniqFnLangItem,            "strdup_uniq",             strdup_uniq_fn;
 
     StartFnLangItem,                 "start",                   start_fn;
 
-    TyDescStructLangItem,            "ty_desc",                 ty_desc;
-    TyVisitorTraitLangItem,          "ty_visitor",              ty_visitor;
-    OpaqueStructLangItem,            "opaque",                  opaque;
-
-    TypeIdLangItem,                  "type_id",                 type_id;
-
     EhPersonalityLangItem,           "eh_personality",          eh_personality;
 
-    ManagedHeapLangItem,             "managed_heap",            managed_heap;
     ExchangeHeapLangItem,            "exchange_heap",           exchange_heap;
-    GcLangItem,                      "gc",                      gc;
     OwnedBoxLangItem,                "owned_box",               owned_box;
 
+    PhantomDataItem,                 "phantom_data",            phantom_data;
+
+    // Deprecated:
     CovariantTypeItem,               "covariant_type",          covariant_type;
     ContravariantTypeItem,           "contravariant_type",      contravariant_type;
     InvariantTypeItem,               "invariant_type",          invariant_type;
-
     CovariantLifetimeItem,           "covariant_lifetime",      covariant_lifetime;
     ContravariantLifetimeItem,       "contravariant_lifetime",  contravariant_lifetime;
     InvariantLifetimeItem,           "invariant_lifetime",      invariant_lifetime;
 
-    NoSendItem,                      "no_send_bound",           no_send_bound;
     NoCopyItem,                      "no_copy_bound",           no_copy_bound;
-    NoSyncItem,                     "no_share_bound",          no_share_bound;
-    ManagedItem,                     "managed_bound",           managed_bound;
 
-    IteratorItem,                    "iterator",                iterator;
+    NonZeroItem,                     "non_zero",                non_zero;
 
     StackExhaustedLangItem,          "stack_exhausted",         stack_exhausted;
+
+    DebugTraitLangItem,              "debug_trait",             debug_trait;
 }

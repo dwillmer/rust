@@ -12,96 +12,140 @@
 
 #![doc(primitive = "f32")]
 // FIXME: MIN_VALUE and MAX_VALUE literals are parsed as -inf and inf #14353
-#![allow(type_overflow)]
+#![allow(overflowing_literals)]
+
+#![stable(feature = "rust1", since = "1.0.0")]
+
+use prelude::*;
 
 use intrinsics;
 use mem;
-use num::{FPNormal, FPCategory, FPZero, FPSubnormal, FPInfinite, FPNaN};
-use num::Float;
-use option::Option;
+use num::{Float, ParseFloatError};
+use num::FpCategory as Fp;
 
-pub static RADIX: uint = 2u;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const RADIX: u32 = 2;
 
-pub static MANTISSA_DIGITS: uint = 24u;
-pub static DIGITS: uint = 6u;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const MANTISSA_DIGITS: u32 = 24;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const DIGITS: u32 = 6;
 
-pub static EPSILON: f32 = 1.19209290e-07_f32;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const EPSILON: f32 = 1.19209290e-07_f32;
 
 /// Smallest finite f32 value
-pub static MIN_VALUE: f32 = -3.40282347e+38_f32;
+#[stable(feature = "rust1", since = "1.0.0")]
+pub const MIN: f32 = -3.40282347e+38_f32;
 /// Smallest positive, normalized f32 value
-pub static MIN_POS_VALUE: f32 = 1.17549435e-38_f32;
+#[stable(feature = "rust1", since = "1.0.0")]
+pub const MIN_POSITIVE: f32 = 1.17549435e-38_f32;
 /// Largest finite f32 value
-pub static MAX_VALUE: f32 = 3.40282347e+38_f32;
+#[stable(feature = "rust1", since = "1.0.0")]
+pub const MAX: f32 = 3.40282347e+38_f32;
 
-pub static MIN_EXP: int = -125;
-pub static MAX_EXP: int = 128;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const MIN_EXP: i32 = -125;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const MAX_EXP: i32 = 128;
 
-pub static MIN_10_EXP: int = -37;
-pub static MAX_10_EXP: int = 38;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const MIN_10_EXP: i32 = -37;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const MAX_10_EXP: i32 = 38;
 
-pub static NAN: f32 = 0.0_f32/0.0_f32;
-pub static INFINITY: f32 = 1.0_f32/0.0_f32;
-pub static NEG_INFINITY: f32 = -1.0_f32/0.0_f32;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const NAN: f32 = 0.0_f32/0.0_f32;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const INFINITY: f32 = 1.0_f32/0.0_f32;
+#[stable(feature = "rust1", since = "1.0.0")]
+#[allow(missing_docs)]
+pub const NEG_INFINITY: f32 = -1.0_f32/0.0_f32;
 
-/// Various useful constants.
+/// Basic mathematial constants.
+#[stable(feature = "rust1", since = "1.0.0")]
 pub mod consts {
     // FIXME: replace with mathematical constants from cmath.
 
-    // FIXME(#5527): These constants should be deprecated once associated
-    // constants are implemented in favour of referencing the respective members
-    // of `Float`.
-
     /// Archimedes' constant
-    pub static PI: f32 = 3.14159265358979323846264338327950288_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const PI: f32 = 3.14159265358979323846264338327950288_f32;
 
     /// pi * 2.0
-    pub static PI_2: f32 = 6.28318530717958647692528676655900576_f32;
+    #[unstable(feature = "float_consts",
+               reason = "unclear naming convention/usefulness")]
+    #[deprecated(since = "1.2.0", reason = "unclear on usefulness")]
+    pub const PI_2: f32 = 6.28318530717958647692528676655900576_f32;
 
     /// pi/2.0
-    pub static FRAC_PI_2: f32 = 1.57079632679489661923132169163975144_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const FRAC_PI_2: f32 = 1.57079632679489661923132169163975144_f32;
 
     /// pi/3.0
-    pub static FRAC_PI_3: f32 = 1.04719755119659774615421446109316763_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const FRAC_PI_3: f32 = 1.04719755119659774615421446109316763_f32;
 
     /// pi/4.0
-    pub static FRAC_PI_4: f32 = 0.785398163397448309615660845819875721_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const FRAC_PI_4: f32 = 0.785398163397448309615660845819875721_f32;
 
     /// pi/6.0
-    pub static FRAC_PI_6: f32 = 0.52359877559829887307710723054658381_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const FRAC_PI_6: f32 = 0.52359877559829887307710723054658381_f32;
 
     /// pi/8.0
-    pub static FRAC_PI_8: f32 = 0.39269908169872415480783042290993786_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const FRAC_PI_8: f32 = 0.39269908169872415480783042290993786_f32;
 
     /// 1.0/pi
-    pub static FRAC_1_PI: f32 = 0.318309886183790671537767526745028724_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const FRAC_1_PI: f32 = 0.318309886183790671537767526745028724_f32;
 
     /// 2.0/pi
-    pub static FRAC_2_PI: f32 = 0.636619772367581343075535053490057448_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const FRAC_2_PI: f32 = 0.636619772367581343075535053490057448_f32;
 
     /// 2.0/sqrt(pi)
-    pub static FRAC_2_SQRTPI: f32 = 1.12837916709551257389615890312154517_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const FRAC_2_SQRT_PI: f32 = 1.12837916709551257389615890312154517_f32;
 
     /// sqrt(2.0)
-    pub static SQRT2: f32 = 1.41421356237309504880168872420969808_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const SQRT_2: f32 = 1.41421356237309504880168872420969808_f32;
 
     /// 1.0/sqrt(2.0)
-    pub static FRAC_1_SQRT2: f32 = 0.707106781186547524400844362104849039_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const FRAC_1_SQRT_2: f32 = 0.707106781186547524400844362104849039_f32;
 
     /// Euler's number
-    pub static E: f32 = 2.71828182845904523536028747135266250_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const E: f32 = 2.71828182845904523536028747135266250_f32;
 
     /// log2(e)
-    pub static LOG2_E: f32 = 1.44269504088896340735992468100189214_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const LOG2_E: f32 = 1.44269504088896340735992468100189214_f32;
 
     /// log10(e)
-    pub static LOG10_E: f32 = 0.434294481903251827651128918916605082_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const LOG10_E: f32 = 0.434294481903251827651128918916605082_f32;
 
     /// ln(2.0)
-    pub static LN_2: f32 = 0.693147180559945309417232121458176568_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const LN_2: f32 = 0.693147180559945309417232121458176568_f32;
 
     /// ln(10.0)
-    pub static LN_10: f32 = 2.30258509299404568401799145468436421_f32;
+    #[stable(feature = "rust1", since = "1.0.0")]
+    pub const LN_10: f32 = 2.30258509299404568401799145468436421_f32;
 }
 
 impl Float for f32 {
@@ -115,7 +159,15 @@ impl Float for f32 {
     fn neg_infinity() -> f32 { NEG_INFINITY }
 
     #[inline]
+    fn zero() -> f32 { 0.0 }
+
+    #[inline]
     fn neg_zero() -> f32 { -0.0 }
+
+    #[inline]
+    fn one() -> f32 { 1.0 }
+
+    from_str_radix_float_impl! { f32 }
 
     /// Returns `true` if the number is NaN.
     #[inline]
@@ -136,49 +188,25 @@ impl Float for f32 {
     /// Returns `true` if the number is neither zero, infinite, subnormal or NaN.
     #[inline]
     fn is_normal(self) -> bool {
-        self.classify() == FPNormal
+        self.classify() == Fp::Normal
     }
 
     /// Returns the floating point category of the number. If only one property
     /// is going to be tested, it is generally faster to use the specific
     /// predicate instead.
-    fn classify(self) -> FPCategory {
-        static EXP_MASK: u32 = 0x7f800000;
-        static MAN_MASK: u32 = 0x007fffff;
+    fn classify(self) -> Fp {
+        const EXP_MASK: u32 = 0x7f800000;
+        const MAN_MASK: u32 = 0x007fffff;
 
         let bits: u32 = unsafe { mem::transmute(self) };
         match (bits & MAN_MASK, bits & EXP_MASK) {
-            (0, 0)        => FPZero,
-            (_, 0)        => FPSubnormal,
-            (0, EXP_MASK) => FPInfinite,
-            (_, EXP_MASK) => FPNaN,
-            _             => FPNormal,
+            (0, 0)        => Fp::Zero,
+            (_, 0)        => Fp::Subnormal,
+            (0, EXP_MASK) => Fp::Infinite,
+            (_, EXP_MASK) => Fp::Nan,
+            _             => Fp::Normal,
         }
     }
-
-    #[inline]
-    fn mantissa_digits(_: Option<f32>) -> uint { MANTISSA_DIGITS }
-
-    #[inline]
-    fn digits(_: Option<f32>) -> uint { DIGITS }
-
-    #[inline]
-    fn epsilon() -> f32 { EPSILON }
-
-    #[inline]
-    fn min_exp(_: Option<f32>) -> int { MIN_EXP }
-
-    #[inline]
-    fn max_exp(_: Option<f32>) -> int { MAX_EXP }
-
-    #[inline]
-    fn min_10_exp(_: Option<f32>) -> int { MIN_10_EXP }
-
-    #[inline]
-    fn max_10_exp(_: Option<f32>) -> int { MAX_10_EXP }
-
-    #[inline]
-    fn min_pos_value(_: Option<f32>) -> f32 { MIN_POS_VALUE }
 
     /// Returns the mantissa, exponent and sign as integers.
     fn integer_decode(self) -> (u64, i16, i8) {
@@ -198,13 +226,37 @@ impl Float for f32 {
     /// Rounds towards minus infinity.
     #[inline]
     fn floor(self) -> f32 {
-        unsafe { intrinsics::floorf32(self) }
+        return floorf(self);
+
+        // On MSVC LLVM will lower many math intrinsics to a call to the
+        // corresponding function. On MSVC, however, many of these functions
+        // aren't actually available as symbols to call, but rather they are all
+        // `static inline` functions in header files. This means that from a C
+        // perspective it's "compatible", but not so much from an ABI
+        // perspective (which we're worried about).
+        //
+        // The inline header functions always just cast to a f64 and do their
+        // operation, so we do that here as well, but only for MSVC targets.
+        //
+        // Note that there are many MSVC-specific float operations which
+        // redirect to this comment, so `floorf` is just one case of a missing
+        // function on MSVC, but there are many others elsewhere.
+        #[cfg(target_env = "msvc")]
+        fn floorf(f: f32) -> f32 { (f as f64).floor() as f32 }
+        #[cfg(not(target_env = "msvc"))]
+        fn floorf(f: f32) -> f32 { unsafe { intrinsics::floorf32(f) } }
     }
 
     /// Rounds towards plus infinity.
     #[inline]
     fn ceil(self) -> f32 {
-        unsafe { intrinsics::ceilf32(self) }
+        return ceilf(self);
+
+        // see notes above in `floor`
+        #[cfg(target_env = "msvc")]
+        fn ceilf(f: f32) -> f32 { (f as f64).ceil() as f32 }
+        #[cfg(not(target_env = "msvc"))]
+        fn ceilf(f: f32) -> f32 { unsafe { intrinsics::ceilf32(f) } }
     }
 
     /// Rounds to nearest integer. Rounds half-way cases away from zero.
@@ -221,12 +273,47 @@ impl Float for f32 {
 
     /// The fractional part of the number, satisfying:
     ///
-    /// ```rust
+    /// ```
     /// let x = 1.65f32;
     /// assert!(x == x.trunc() + x.fract())
     /// ```
     #[inline]
     fn fract(self) -> f32 { self - self.trunc() }
+
+    /// Computes the absolute value of `self`. Returns `Float::nan()` if the
+    /// number is `Float::nan()`.
+    #[inline]
+    fn abs(self) -> f32 {
+        unsafe { intrinsics::fabsf32(self) }
+    }
+
+    /// Returns a number that represents the sign of `self`.
+    ///
+    /// - `1.0` if the number is positive, `+0.0` or `Float::infinity()`
+    /// - `-1.0` if the number is negative, `-0.0` or `Float::neg_infinity()`
+    /// - `Float::nan()` if the number is `Float::nan()`
+    #[inline]
+    fn signum(self) -> f32 {
+        if self.is_nan() {
+            Float::nan()
+        } else {
+            unsafe { intrinsics::copysignf32(1.0, self) }
+        }
+    }
+
+    /// Returns `true` if `self` is positive, including `+0.0` and
+    /// `Float::infinity()`.
+    #[inline]
+    fn is_positive(self) -> bool {
+        self > 0.0 || (1.0 / self) == Float::infinity()
+    }
+
+    /// Returns `true` if `self` is negative, including `-0.0` and
+    /// `Float::neg_infinity()`.
+    #[inline]
+    fn is_negative(self) -> bool {
+        self < 0.0 || (1.0 / self) == Float::neg_infinity()
+    }
 
     /// Fused multiply-add. Computes `(self * a) + b` with only one rounding
     /// error. This produces a more accurate result with better performance than
@@ -240,95 +327,44 @@ impl Float for f32 {
     #[inline]
     fn recip(self) -> f32 { 1.0 / self }
 
+    #[inline]
     fn powi(self, n: i32) -> f32 {
         unsafe { intrinsics::powif32(self, n) }
     }
 
     #[inline]
     fn powf(self, n: f32) -> f32 {
-        unsafe { intrinsics::powf32(self, n) }
+        return powf(self, n);
+
+        // see notes above in `floor`
+        #[cfg(target_env = "msvc")]
+        fn powf(f: f32, n: f32) -> f32 { (f as f64).powf(n as f64) as f32 }
+        #[cfg(not(target_env = "msvc"))]
+        fn powf(f: f32, n: f32) -> f32 { unsafe { intrinsics::powf32(f, n) } }
     }
-
-    /// sqrt(2.0)
-    #[inline]
-    fn sqrt2() -> f32 { consts::SQRT2 }
-
-    /// 1.0 / sqrt(2.0)
-    #[inline]
-    fn frac_1_sqrt2() -> f32 { consts::FRAC_1_SQRT2 }
 
     #[inline]
     fn sqrt(self) -> f32 {
-        unsafe { intrinsics::sqrtf32(self) }
+        if self < 0.0 {
+            NAN
+        } else {
+            unsafe { intrinsics::sqrtf32(self) }
+        }
     }
 
     #[inline]
     fn rsqrt(self) -> f32 { self.sqrt().recip() }
 
-    /// Archimedes' constant
-    #[inline]
-    fn pi() -> f32 { consts::PI }
-
-    /// 2.0 * pi
-    #[inline]
-    fn two_pi() -> f32 { consts::PI_2 }
-
-    /// pi / 2.0
-    #[inline]
-    fn frac_pi_2() -> f32 { consts::FRAC_PI_2 }
-
-    /// pi / 3.0
-    #[inline]
-    fn frac_pi_3() -> f32 { consts::FRAC_PI_3 }
-
-    /// pi / 4.0
-    #[inline]
-    fn frac_pi_4() -> f32 { consts::FRAC_PI_4 }
-
-    /// pi / 6.0
-    #[inline]
-    fn frac_pi_6() -> f32 { consts::FRAC_PI_6 }
-
-    /// pi / 8.0
-    #[inline]
-    fn frac_pi_8() -> f32 { consts::FRAC_PI_8 }
-
-    /// 1.0 / pi
-    #[inline]
-    fn frac_1_pi() -> f32 { consts::FRAC_1_PI }
-
-    /// 2.0 / pi
-    #[inline]
-    fn frac_2_pi() -> f32 { consts::FRAC_2_PI }
-
-    /// 2.0 / sqrt(pi)
-    #[inline]
-    fn frac_2_sqrtpi() -> f32 { consts::FRAC_2_SQRTPI }
-
-    /// Euler's number
-    #[inline]
-    fn e() -> f32 { consts::E }
-
-    /// log2(e)
-    #[inline]
-    fn log2_e() -> f32 { consts::LOG2_E }
-
-    /// log10(e)
-    #[inline]
-    fn log10_e() -> f32 { consts::LOG10_E }
-
-    /// ln(2.0)
-    #[inline]
-    fn ln_2() -> f32 { consts::LN_2 }
-
-    /// ln(10.0)
-    #[inline]
-    fn ln_10() -> f32 { consts::LN_10 }
-
     /// Returns the exponential of the number.
     #[inline]
     fn exp(self) -> f32 {
-        unsafe { intrinsics::expf32(self) }
+        return expf(self);
+
+        // see notes above in `floor`
+        #[cfg(target_env = "msvc")]
+        fn expf(f: f32) -> f32 { (f as f64).exp() as f32 }
+        #[cfg(not(target_env = "msvc"))]
+        fn expf(f: f32) -> f32 { unsafe { intrinsics::expf32(f) } }
     }
 
     /// Returns 2 raised to the power of the number.
@@ -340,7 +376,13 @@ impl Float for f32 {
     /// Returns the natural logarithm of the number.
     #[inline]
     fn ln(self) -> f32 {
-        unsafe { intrinsics::logf32(self) }
+        return logf(self);
+
+        // see notes above in `floor`
+        #[cfg(target_env = "msvc")]
+        fn logf(f: f32) -> f32 { (f as f64).ln() as f32 }
+        #[cfg(not(target_env = "msvc"))]
+        fn logf(f: f32) -> f32 { unsafe { intrinsics::logf32(f) } }
     }
 
     /// Returns the logarithm of the number with respect to an arbitrary base.
@@ -356,17 +398,23 @@ impl Float for f32 {
     /// Returns the base 10 logarithm of the number.
     #[inline]
     fn log10(self) -> f32 {
-        unsafe { intrinsics::log10f32(self) }
+        return log10f(self);
+
+        // see notes above in `floor`
+        #[cfg(target_env = "msvc")]
+        fn log10f(f: f32) -> f32 { (f as f64).log10() as f32 }
+        #[cfg(not(target_env = "msvc"))]
+        fn log10f(f: f32) -> f32 { unsafe { intrinsics::log10f32(f) } }
     }
 
     /// Converts to degrees, assuming the number is in radians.
     #[inline]
-    fn to_degrees(self) -> f32 { self * (180.0f32 / Float::pi()) }
+    fn to_degrees(self) -> f32 { self * (180.0f32 / consts::PI) }
 
     /// Converts to radians, assuming the number is in degrees.
     #[inline]
     fn to_radians(self) -> f32 {
-        let value: f32 = Float::pi();
+        let value: f32 = consts::PI;
         self * (value / 180.0f32)
     }
 }

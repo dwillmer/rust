@@ -1,26 +1,51 @@
-// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
+// The Computer Language Benchmarks Game
+// http://benchmarksgame.alioth.debian.org/
 //
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
+// contributed by the Rust Project Developers
 
-/* -*- mode: rust; indent-tabs-mode: nil -*-
- * Implementation of 'fasta' benchmark from
- * Computer Language Benchmarks Game
- * http://shootout.alioth.debian.org/
- */
+// Copyright (c) 2012-2014 The Rust Project Developers
+//
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions
+// are met:
+//
+// - Redistributions of source code must retain the above copyright
+//   notice, this list of conditions and the following disclaimer.
+//
+// - Redistributions in binary form must reproduce the above copyright
+//   notice, this list of conditions and the following disclaimer in
+//   the documentation and/or other materials provided with the
+//   distribution.
+//
+// - Neither the name of "The Computer Language Benchmarks Game" nor
+//   the name of "The Computer Language Shootout Benchmarks" nor the
+//   names of its contributors may be used to endorse or promote
+//   products derived from this software without specific prior
+//   written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+// FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+// COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+// INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+// (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+// HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+// STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+// OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use std::io;
-use std::io::{BufferedWriter, File};
 use std::cmp::min;
-use std::os;
+use std::env;
+use std::fs::File;
+use std::io::{self, BufWriter};
+use std::io::prelude::*;
 
-static LINE_LENGTH: uint = 60;
-static IM: u32 = 139968;
+const LINE_LENGTH: usize = 60;
+const IM: u32 = 139968;
 
 struct MyRandom {
     last: u32
@@ -36,7 +61,8 @@ impl MyRandom {
 
 struct AAGen<'a> {
     rng: &'a mut MyRandom,
-    data: Vec<(u32, u8)> }
+    data: Vec<(u32, u8)>
+}
 impl<'a> AAGen<'a> {
     fn new<'b>(rng: &'b mut MyRandom, aa: &[(char, f32)]) -> AAGen<'b> {
         let mut cum = 0.;
@@ -46,41 +72,44 @@ impl<'a> AAGen<'a> {
         AAGen { rng: rng, data: data }
     }
 }
-impl<'a> Iterator<u8> for AAGen<'a> {
+impl<'a> Iterator for AAGen<'a> {
+    type Item = u8;
+
     fn next(&mut self) -> Option<u8> {
         let r = self.rng.gen();
         self.data.iter()
-            .skip_while(|pc| pc.val0() < r)
+            .skip_while(|pc| pc.0 < r)
             .map(|&(_, c)| c)
             .next()
     }
 }
 
-fn make_fasta<W: Writer, I: Iterator<u8>>(
-    wr: &mut W, header: &str, mut it: I, mut n: uint)
+fn make_fasta<W: Write, I: Iterator<Item=u8>>(
+    wr: &mut W, header: &str, mut it: I, mut n: usize)
+    -> io::Result<()>
 {
-    wr.write(header.as_bytes());
-    let mut line = [0u8, .. LINE_LENGTH + 1];
+    try!(wr.write(header.as_bytes()));
+    let mut line = [0; LINE_LENGTH + 1];
     while n > 0 {
         let nb = min(LINE_LENGTH, n);
-        for i in range(0, nb) {
+        for i in 0..nb {
             line[i] = it.next().unwrap();
         }
         n -= nb;
         line[nb] = '\n' as u8;
-        wr.write(line.slice_to(nb + 1));
+        try!(wr.write(&line[..nb+1]));
     }
+    Ok(())
 }
 
-fn run<W: Writer>(writer: &mut W) {
-    let args = os::args();
-    let args = args.as_slice();
-    let n = if os::getenv("RUST_BENCH").is_some() {
+fn run<W: Write>(writer: &mut W) -> io::Result<()> {
+    let mut args = env::args();
+    let n = if env::var_os("RUST_BENCH").is_some() {
         25000000
-    } else if args.len() <= 1u {
+    } else if args.len() <= 1 {
         1000
     } else {
-        from_str(args[1].as_slice()).unwrap()
+        args.nth(1).unwrap().parse().unwrap()
     };
 
     let rng = &mut MyRandom::new();
@@ -102,21 +131,22 @@ fn run<W: Writer>(writer: &mut W) {
                         ('g', 0.1975473066391),
                         ('t', 0.3015094502008)];
 
-    make_fasta(writer, ">ONE Homo sapiens alu\n",
-               alu.as_bytes().iter().cycle().map(|c| *c), n * 2);
-    make_fasta(writer, ">TWO IUB ambiguity codes\n",
-               AAGen::new(rng, iub), n * 3);
-    make_fasta(writer, ">THREE Homo sapiens frequency\n",
-               AAGen::new(rng, homosapiens), n * 5);
+    try!(make_fasta(writer, ">ONE Homo sapiens alu\n",
+                    alu.as_bytes().iter().cycle().cloned(), n * 2));
+    try!(make_fasta(writer, ">TWO IUB ambiguity codes\n",
+                    AAGen::new(rng, iub), n * 3));
+    try!(make_fasta(writer, ">THREE Homo sapiens frequency\n",
+                    AAGen::new(rng, homosapiens), n * 5));
 
-    writer.flush();
+    writer.flush()
 }
 
 fn main() {
-    if os::getenv("RUST_BENCH").is_some() {
-        let mut file = BufferedWriter::new(File::create(&Path::new("./shootout-fasta.data")));
-        run(&mut file);
+    let res = if env::var_os("RUST_BENCH").is_some() {
+        let mut file = BufWriter::new(File::create("./shootout-fasta.data").unwrap());
+        run(&mut file)
     } else {
-        run(&mut io::stdout());
-    }
+        run(&mut io::stdout())
+    };
+    res.unwrap()
 }

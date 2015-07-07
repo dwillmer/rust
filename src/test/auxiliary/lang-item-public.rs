@@ -8,14 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(no_std, core, libc)]
 #![no_std]
 #![feature(lang_items)]
 
-#[lang="fail_"]
-fn fail(_: &(&'static str, &'static str, uint)) -> ! { loop {} }
+extern crate core;
+extern crate libc;
 
 #[lang = "stack_exhausted"]
 extern fn stack_exhausted() {}
 
 #[lang = "eh_personality"]
 extern fn eh_personality() {}
+
+#[lang = "panic_fmt"]
+extern fn rust_begin_unwind(msg: core::fmt::Arguments, file: &'static str,
+                            line: u32) -> ! {
+    loop {}
+}

@@ -8,15 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
 
 // compile-flags:-g
+// min-lldb-version: 310
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
-// gdb-command:finish
 
 // gdb-command:print *the_a_ref
 // gdb-check:$1 = TheA
@@ -41,18 +39,19 @@
 // lldb-command:print *the_c_ref
 // lldb-check:[...]$2 = TheC
 
-#![allow(unused_variable)]
+#![allow(unused_variables)]
+#![omit_gdb_pretty_printer_section]
 
 enum ABC { TheA, TheB, TheC }
 
 fn main() {
-    let the_a = TheA;
+    let the_a = ABC::TheA;
     let the_a_ref: &ABC = &the_a;
 
-    let the_b = TheB;
+    let the_b = ABC::TheB;
     let the_b_ref: &ABC = &the_b;
 
-    let the_c = TheC;
+    let the_c = ABC::TheC;
     let the_c_ref: &ABC = &the_c;
 
     zzz(); // #break

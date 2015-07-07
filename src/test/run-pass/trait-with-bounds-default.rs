@@ -8,10 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 //
-// ignore-lexer-test FIXME #15877
 
 pub trait Clone2 {
-    /// Returns a copy of the value. The contents of owned pointers
+    /// Returns a copy of the value. The contents of boxes
     /// are copied to maintain uniqueness, while the contents of
     /// managed pointers are not copied.
     fn clone(&self) -> Self;
@@ -27,12 +26,12 @@ trait Getter<T: Clone> {
 
 }
 
-impl Getter<int> for int {
-    fn do_get(&self) -> int { *self }
+impl Getter<isize> for isize {
+    fn do_get(&self) -> isize { *self }
 }
 
 impl<T: Clone> Getter<T> for Option<T> {
-    fn do_get(&self) -> T { self.get_ref().clone() }
+    fn do_get(&self) -> T { self.as_ref().unwrap().clone() }
 }
 
 

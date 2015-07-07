@@ -1,93 +1,99 @@
 % Rust Documentation
 
-<!-- Completely hide the TOC and the section numbers -->
-<style type="text/css">
-#TOC { display: none; }
-.header-section-number { display: none; }
-li {list-style-type: none; }
-</style>
+Welcome to the Rust documentation! You can use the section headings above
+to jump to any particular section.
 
-* [A 30-minute Intro to Rust](intro.html)
-* [The Rust tutorial](tutorial.html)  (* [PDF](tutorial.pdf))
-* [The Rust reference manual](rust.html) (* [PDF](rust.pdf))
+# Getting Started
 
-# Guides
+If you haven't seen Rust at all yet, the first thing you should read is the
+introduction to [The Rust Programming Language](book/index.html). It'll give
+you a good idea of what Rust is like.
 
-* [Strings](guide-strings.html)
-* [Pointers](guide-pointers.html)
-* [References and Lifetimes](guide-lifetimes.html)
-* [Containers and Iterators](guide-container.html)
-* [Tasks and Communication](guide-tasks.html)
-* [Foreign Function Interface](guide-ffi.html)
-* [Writing Unsafe and Low-Level Code](guide-unsafe.html)
-* [Macros](guide-macros.html)
-* [Testing](guide-testing.html)
-* [Rust's Runtime](guide-runtime.html)
+The book provides a lengthy explanation of Rust, its syntax, and its
+concepts. Upon completing the book, you'll be an intermediate Rust
+developer, and will have a good grasp of the fundamental ideas behind
+Rust.
+
+[Rust By Example][rbe] was originally a community resource, but was then
+donated to the Rust project. As the name implies, it teaches you Rust through a
+series of small examples.
+
+[rbe]: http://rustbyexample.com/
+
+# The Standard Library
+
+We have [API documentation for the entire standard
+library](std/index.html). There's a list of crates on the left with more
+specific sections, or you can use the search bar at the top to search for
+something if you know its name.
+
+# Community & Getting Help
+
+If you need help with something, or just want to talk about Rust with others,
+there are a few places you can do that:
+
+The Rust IRC channels on [irc.mozilla.org](irc://irc.mozilla.org/) are the
+fastest way to get help.
+[`#rust`](http://chat.mibbit.com/?server=irc.mozilla.org&channel=%23rust) is
+the general discussion channel, and you'll find people willing to help you with
+any questions you may have.
+
+There are also three specialty channels:
+[`#rust-gamedev`](http://chat.mibbit.com/?server=irc.mozilla.org&channel=%23rust-gamedev)
+and
+[`#rust-osdev`](http://chat.mibbit.com/?server=irc.mozilla.org&channel=%23rust-osdev)
+are for game development and operating system development, respectively.
+There's also
+[`#rust-internals`](http://chat.mibbit.com/?server=irc.mozilla.org&channel=%23rust-internals), which is for discussion of the development of Rust itself.
+
+You can also get help on [Stack
+Overflow](https://stackoverflow.com/questions/tagged/rust). Searching for your
+problem might reveal someone who has asked it before!
+
+There is an active [subreddit](https://reddit.com/r/rust) with lots of
+discussion and news about Rust.
+
+There is also a [user forum](https://users.rust-lang.org), for all
+user-oriented discussion, and a [developer 
+forum](https://internals.rust-lang.org/), where the development of Rust
+itself is discussed.
+
+# Specification
+
+Rust does not have an exact specification, but an effort to describe as much of
+the language in as much detail as possible is in [the reference](reference.html).
+
+# Tools
+
+Rust is still a young language, so there isn't a ton of tooling yet, but the
+tools we have are really nice.
+
+[Cargo](https://crates.io) is Rust's package manager, and its website contains
+lots of good documentation.
+
+[`rustdoc`](book/documentation.html) is used to generate documentation for Rust code.
 
 # FAQs
+
+There are questions that are asked quite often, so we've made FAQs for them:
 
 * [Language Design FAQ](complement-design-faq.html)
 * [Language FAQ](complement-lang-faq.html)
 * [Project FAQ](complement-project-faq.html)
-* [How to submit a bug report](complement-bugreport.html)
+* [How to submit a bug report](https://github.com/rust-lang/rust/blob/master/CONTRIBUTING.md#bug-reports)
 
-# Libraries
+# The Error Index
 
-* [The standard library, `std`](std/index.html)
+If you encounter an error while compiling your code you may be able to look it
+up in the [Rust Compiler Error Index](error-index.html).
 
-<!-- force the two lists to be separate -->
+# Community Translations
 
-* [The `arena` allocation library](arena/index.html)
-* [The `collections` library](collections/index.html)
-* [The `flate` compression library](flate/index.html)
-* [The `fourcc` four-character code library](fourcc/index.html)
-* [The `getopts` argument parsing library](getopts/index.html)
-* [The `glob` file path matching library](glob/index.html)
-* [The `green` M:N runtime library](green/index.html)
-* [The `hexfloat` library for hexadecimal floating-point literals](hexfloat/index.html)
-* [The `libc` bindings](libc/index.html)
-* [The `native` 1:1 threading runtime](native/index.html)
-* [The `num` arbitrary precision numerics library](num/index.html)
-* [The `rand` library for random numbers and distributions](rand/index.html)
-* [The `regex` library for regular expressions](regex/index.html)
-* [The `rustc` compiler](rustc/index.html)
-* [The `rustuv` M:N I/O library](rustuv/index.html)
-* [The `semver` version collation library](semver/index.html)
-* [The `serialize` value encoding/decoding library](serialize/index.html)
-* [The `sync` library for concurrency-enabled mechanisms and primitives](sync/index.html)
-* [The `syntax` library, the Rust parser](syntax/index.html)
-* [The `term` terminal-handling library](term/index.html)
-* [The `test` library containing the unit-testing & micro-benchmark framework](test/index.html)
-* [The `time` library](time/index.html)
-* [The `uuid` 128-bit universally unique identifier library](uuid/index.html)
-* [The `url` library](url/index.html)
-* [The `log` library](log/index.html)
+Several projects have been started to translate the documentation into other
+languages:
 
-# Tooling
-
-* [The `rustdoc` manual](rustdoc.html)
-
-# External documentation
-
-*Note: While these are great resources for learning Rust, they may
-track a particular version of Rust that is likely not exactly the same
-as that for which this documentation was generated.*
-
-* [Rust for Rubyists] - An excellent introduction for Rust; not just for Rubyists (tracks the most recent release).
-* [Rust by Example] - Short examples of common tasks in Rust (tracks the master branch).
-* [The Rust wiki](http://github.com/rust-lang/rust/wiki)
-
-[Rust for Rubyists]: http://www.rustforrubyists.com/
-[Rust by Example]: http://rustbyexample.com/
-
-# Community
-
-* [Reddit](http://reddit.com/r/rust)
-* [Stack Overflow](http://stackoverflow.com/questions/tagged/rust)
-* [Developer Forum](http://discuss.rust-lang.org/)
-* The Rust IRC channels on [irc.mozilla.org](http://irc.mozilla.org/):
-    * [`#rust`](http://chat.mibbit.com/?server=irc.mozilla.org&channel=%23rust) - general discussion
-    * [`#rust-gamedev`](http://chat.mibbit.com/?server=irc.mozilla.org&channel=%23rust-gamedev) - game development
-    * [`#rust-internals`](http://chat.mibbit.com/?server=irc.mozilla.org&channel=%23rust-internals) - compiler and libraries
-    * [`#rust-osdev`](http://chat.mibbit.com/?server=irc.mozilla.org&channel=%23rust-osdev) - operating system development
+- [Russian](https://github.com/kgv/rust_book_ru)
+- [Korean](https://github.com/rust-kr/doc.rust-kr.org)
+- [Chinese](https://github.com/KaiserY/rust-book-chinese)
+- [Spanish](https://github.com/goyox86/elpr)
 

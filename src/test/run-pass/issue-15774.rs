@@ -8,25 +8,27 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// pretty-expanded FIXME #23616
+
 #![deny(warnings)]
 #![allow(unused_imports)]
 
-enum Foo { A }
+pub enum Foo { A }
 mod bar {
     pub fn normal(x: ::Foo) {
-        use A;
+        use Foo::A;
         match x {
             A => {}
         }
     }
     pub fn wrong(x: ::Foo) {
         match x {
-            ::A => {}
+            ::Foo::A => {}
         }
     }
 }
 
 pub fn main() {
-    bar::normal(A);
-    bar::wrong(A);
+    bar::normal(Foo::A);
+    bar::wrong(Foo::A);
 }

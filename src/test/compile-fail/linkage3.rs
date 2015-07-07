@@ -16,6 +16,5 @@ extern {
 }
 
 fn main() {
-    println!("{}", foo);
+    println!("{:?}", foo);
 }
-

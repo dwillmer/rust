@@ -8,8 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
 
-static mut a: Box<int> = box 3;
-//~^ ERROR mutable static items are not allowed to have owned pointers
+static mut a: Box<isize> = box 3;
+//~^ ERROR allocations are not allowed in statics
+//~^^ ERROR mutable statics are not allowed to have boxes
 
 fn main() {}

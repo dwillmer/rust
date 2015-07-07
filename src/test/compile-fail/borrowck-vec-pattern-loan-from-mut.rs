@@ -8,11 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(slice_patterns)]
+
 fn a() {
     let mut v = vec!(1, 2, 3);
-    let vb: &mut [int] = v.as_mut_slice();
+    let vb: &mut [isize] = &mut v;
     match vb {
-        [_a, ..tail] => {
+        [_a, tail..] => {
             v.push(tail[0] + tail[1]); //~ ERROR cannot borrow
         }
         _ => {}

@@ -8,23 +8,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-/*!
-A mini version of ast::Ty, which is easier to use, and features an
-explicit `Self` type to use when specifying impls to be derived.
-*/
+//! A mini version of ast::Ty, which is easier to use, and features an explicit `Self` type to use
+//! when specifying impls to be derived.
+
+pub use self::PtrTy::*;
+pub use self::Ty::*;
 
 use ast;
-use ast::{P,Expr,Generics,Ident};
+use ast::{Expr,Generics,Ident};
 use ext::base::ExtCtxt;
 use ext::build::AstBuilder;
 use codemap::{Span,respan};
 use owned_slice::OwnedSlice;
 use parse::token::special_idents;
-
-use std::gc::Gc;
+use ptr::P;
 
 /// The types of pointers
-#[deriving(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum PtrTy<'a> {
     /// &'lifetime mut
     Borrowed(Option<&'a str>, ast::Mutability),
@@ -32,9 +32,9 @@ pub enum PtrTy<'a> {
     Raw(ast::Mutability),
 }
 
-/// A path, e.g. `::std::option::Option::<int>` (global). Has support
+/// A path, e.g. `::std::option::Option::<i32>` (global). Has support
 /// for type parameters and a lifetime.
-#[deriving(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Path<'a> {
     pub path: Vec<&'a str> ,
     pub lifetime: Option<&'a str>,
@@ -68,7 +68,7 @@ impl<'a> Path<'a> {
                  self_ty: Ident,
                  self_generics: &Generics)
                  -> P<ast::Ty> {
-        cx.ty_path(self.to_path(cx, span, self_ty, self_generics), None)
+        cx.ty_path(self.to_path(cx, span, self_ty, self_generics))
     }
     pub fn to_path(&self,
                    cx: &ExtCtxt,
@@ -80,18 +80,18 @@ impl<'a> Path<'a> {
         let lt = mk_lifetimes(cx, span, &self.lifetime);
         let tys = self.params.iter().map(|t| t.to_ty(cx, span, self_ty, self_generics)).collect();
 
-        cx.path_all(span, self.global, idents, lt, tys)
+        cx.path_all(span, self.global, idents, lt, tys, Vec::new())
     }
 }
 
 /// A type. Supports pointers, Self, and literals
-#[deriving(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum Ty<'a> {
-    Self,
+    Self_,
     /// &/Box/ Ty
     Ptr(Box<Ty<'a>>, PtrTy<'a>),
     /// mod::mod::Type<[lifetime], [Params...]>, including a plain type
-    /// parameter, and things like `int`
+    /// parameter, and things like `i32`
     Literal(Path<'a>),
     /// includes unit
     Tuple(Vec<Ty<'a>> )
@@ -109,7 +109,7 @@ pub fn borrowed_explicit_self<'r>() -> Option<Option<PtrTy<'r>>> {
 }
 
 pub fn borrowed_self<'r>() -> Ty<'r> {
-    borrowed(box Self)
+    borrowed(Box::new(Self_))
 }
 
 pub fn nil_ty<'r>() -> Ty<'r> {
@@ -149,18 +149,13 @@ impl<'a> Ty<'a> {
                 }
             }
             Literal(ref p) => { p.to_ty(cx, span, self_ty, self_generics) }
-            Self  => {
-                cx.ty_path(self.to_path(cx, span, self_ty, self_generics), None)
+            Self_  => {
+                cx.ty_path(self.to_path(cx, span, self_ty, self_generics))
             }
             Tuple(ref fields) => {
-                let ty = if fields.is_empty() {
-                    ast::TyNil
-                } else {
-                    ast::TyTup(fields.iter()
-                                     .map(|f| f.to_ty(cx, span, self_ty, self_generics))
-                                     .collect())
-                };
-
+                let ty = ast::TyTup(fields.iter()
+                    .map(|f| f.to_ty(cx, span, self_ty, self_generics))
+                    .collect());
                 cx.ty(span, ty)
             }
         }
@@ -173,7 +168,7 @@ impl<'a> Ty<'a> {
                    self_generics: &Generics)
                    -> ast::Path {
         match *self {
-            Self => {
+            Self_ => {
                 let self_params = self_generics.ty_params.map(|ty_param| {
                     cx.ty_ident(span, ty_param.ident)
                 });
@@ -182,27 +177,31 @@ impl<'a> Ty<'a> {
                                                        .collect();
 
                 cx.path_all(span, false, vec!(self_ty), lifetimes,
-                            self_params.into_vec())
+                            self_params.into_vec(), Vec::new())
             }
             Literal(ref p) => {
                 p.to_path(cx, span, self_ty, self_generics)
             }
-            Ptr(..) => { cx.span_bug(span, "pointer in a path in generic `deriving`") }
-            Tuple(..) => { cx.span_bug(span, "tuple in a path in generic `deriving`") }
+            Ptr(..) => { cx.span_bug(span, "pointer in a path in generic `derive`") }
+            Tuple(..) => { cx.span_bug(span, "tuple in a path in generic `derive`") }
         }
     }
 }
 
 
-fn mk_ty_param(cx: &ExtCtxt, span: Span, name: &str,
-               bounds: &[Path], unbound: Option<ast::TyParamBound>,
-               self_ident: Ident, self_generics: &Generics) -> ast::TyParam {
+fn mk_ty_param(cx: &ExtCtxt,
+               span: Span,
+               name: &str,
+               bounds: &[Path],
+               self_ident: Ident,
+               self_generics: &Generics)
+               -> ast::TyParam {
     let bounds =
         bounds.iter().map(|b| {
             let path = b.to_path(cx, span, self_ident, self_generics);
             cx.typarambound(path)
         }).collect();
-    cx.typaram(span, cx.ident_of(name), bounds, unbound, None)
+    cx.typaram(span, cx.ident_of(name), bounds, None)
 }
 
 fn mk_generics(lifetimes: Vec<ast::LifetimeDef>, ty_params: Vec<ast::TyParam>)
@@ -218,10 +217,10 @@ fn mk_generics(lifetimes: Vec<ast::LifetimeDef>, ty_params: Vec<ast::TyParam>)
 }
 
 /// Lifetimes and bounds on type parameters
-#[deriving(Clone)]
+#[derive(Clone)]
 pub struct LifetimeBounds<'a> {
     pub lifetimes: Vec<(&'a str, Vec<&'a str>)>,
-    pub bounds: Vec<(&'a str, Option<ast::TyParamBound>, Vec<Path<'a>>)>,
+    pub bounds: Vec<(&'a str, Vec<Path<'a>>)>,
 }
 
 impl<'a> LifetimeBounds<'a> {
@@ -244,12 +243,11 @@ impl<'a> LifetimeBounds<'a> {
         }).collect();
         let ty_params = self.bounds.iter().map(|t| {
             match t {
-                &(ref name, ref unbound, ref bounds) => {
+                &(ref name, ref bounds) => {
                     mk_ty_param(cx,
                                 span,
                                 *name,
-                                bounds.as_slice(),
-                                unbound.clone(),
+                                bounds,
                                 self_ty,
                                 self_generics)
                 }
@@ -260,7 +258,7 @@ impl<'a> LifetimeBounds<'a> {
 }
 
 pub fn get_explicit_self(cx: &ExtCtxt, span: Span, self_ptr: &Option<PtrTy>)
-    -> (Gc<Expr>, ast::ExplicitSelf) {
+    -> (P<Expr>, ast::ExplicitSelf) {
     // this constructs a fresh `self` path, which will match the fresh `self` binding
     // created below.
     let self_path = cx.expr_self(span);

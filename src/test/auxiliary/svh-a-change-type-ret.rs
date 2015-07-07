@@ -13,9 +13,7 @@
 //! should not affect the strict version hash (SVH) computation
 //! (#14132).
 
-#![feature(macro_rules)]
-
-#![crate_id = "a"]
+#![crate_name = "a"]
 
 macro_rules! three {
     () => { 3 }
@@ -26,9 +24,9 @@ pub trait V {}
 impl U for () {}
 impl V for () {}
 
-static A_CONSTANT : int = 2;
+static A_CONSTANT : isize = 2;
 
-pub fn foo<T:U>(_: int) -> i64 {
+pub fn foo<T:U>(_: isize) -> i64 {
     3
 }
 

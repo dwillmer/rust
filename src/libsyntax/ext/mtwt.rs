@@ -15,10 +15,11 @@
 //! and definition contexts*. J. Funct. Program. 22, 2 (March 2012), 181-216.
 //! DOI=10.1017/S0956796812000093 http://dx.doi.org/10.1017/S0956796812000093
 
+pub use self::SyntaxContext_::*;
+
 use ast::{Ident, Mrk, Name, SyntaxContext};
 
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::collections::HashMap;
 
 /// The SCTable contains a table of SyntaxContext_'s. It
@@ -37,7 +38,7 @@ pub struct SCTable {
     rename_memo: RefCell<HashMap<(SyntaxContext,Ident,Name),SyntaxContext>>,
 }
 
-#[deriving(PartialEq, Encodable, Decodable, Hash)]
+#[derive(PartialEq, RustcEncodable, RustcDecodable, Hash, Debug, Copy, Clone)]
 pub enum SyntaxContext_ {
     EmptyCtxt,
     Mark (Mrk,SyntaxContext),
@@ -65,10 +66,8 @@ pub fn apply_mark(m: Mrk, ctxt: SyntaxContext) -> SyntaxContext {
 /// Extend a syntax context with a given mark and sctable (explicit memoization)
 fn apply_mark_internal(m: Mrk, ctxt: SyntaxContext, table: &SCTable) -> SyntaxContext {
     let key = (ctxt, m);
-    let new_ctxt = |_: &(SyntaxContext, Mrk)|
-                   idx_push(&mut *table.table.borrow_mut(), Mark(m, ctxt));
-
-    *table.mark_memo.borrow_mut().find_or_insert_with(key, new_ctxt)
+    * table.mark_memo.borrow_mut().entry(key)
+        .or_insert_with(|| idx_push(&mut *table.table.borrow_mut(), Mark(m, ctxt)))
 }
 
 /// Extend a syntax context with a given rename
@@ -83,10 +82,9 @@ fn apply_rename_internal(id: Ident,
                        ctxt: SyntaxContext,
                        table: &SCTable) -> SyntaxContext {
     let key = (ctxt, id, to);
-    let new_ctxt = |_: &(SyntaxContext, Ident, Name)|
-                   idx_push(&mut *table.table.borrow_mut(), Rename(id, to, ctxt));
 
-    *table.rename_memo.borrow_mut().find_or_insert_with(key, new_ctxt)
+    * table.rename_memo.borrow_mut().entry(key)
+        .or_insert_with(|| idx_push(&mut *table.table.borrow_mut(), Rename(id, to, ctxt)))
 }
 
 /// Apply a list of renamings to a context
@@ -100,17 +98,11 @@ pub fn apply_renames(renames: &RenameList, ctxt: SyntaxContext) -> SyntaxContext
 }
 
 /// Fetch the SCTable from TLS, create one if it doesn't yet exist.
-pub fn with_sctable<T>(op: |&SCTable| -> T) -> T {
-    local_data_key!(sctable_key: Rc<SCTable>)
-
-    match sctable_key.get() {
-        Some(ts) => op(&**ts),
-        None => {
-            let ts = Rc::new(new_sctable_internal());
-            sctable_key.replace(Some(ts.clone()));
-            op(&*ts)
-        }
-    }
+pub fn with_sctable<T, F>(op: F) -> T where
+    F: FnOnce(&SCTable) -> T,
+{
+    thread_local!(static SCTABLE_KEY: SCTable = new_sctable_internal());
+    SCTABLE_KEY.with(move |slot| op(slot))
 }
 
 // Make a fresh syntax context table with EmptyCtxt in slot zero
@@ -127,7 +119,7 @@ fn new_sctable_internal() -> SCTable {
 pub fn display_sctable(table: &SCTable) {
     error!("SC table:");
     for (idx,val) in table.table.borrow().iter().enumerate() {
-        error!("{:4u} : {:?}",idx,val);
+        error!("{:4} : {:?}",idx,val);
     }
 }
 
@@ -135,6 +127,16 @@ pub fn display_sctable(table: &SCTable) {
 pub fn clear_tables() {
     with_sctable(|table| {
         *table.table.borrow_mut() = Vec::new();
+        *table.mark_memo.borrow_mut() = HashMap::new();
+        *table.rename_memo.borrow_mut() = HashMap::new();
+    });
+    with_resolve_table_mut(|table| *table = HashMap::new());
+}
+
+/// Reset the tables to their initial state
+pub fn reset_tables() {
+    with_sctable(|table| {
+        *table.table.borrow_mut() = vec!(EmptyCtxt, IllegalCtxt);
         *table.mark_memo.borrow_mut() = HashMap::new();
         *table.rename_memo.borrow_mut() = HashMap::new();
     });
@@ -160,17 +162,14 @@ type ResolveTable = HashMap<(Name,SyntaxContext),Name>;
 
 // okay, I admit, putting this in TLS is not so nice:
 // fetch the SCTable from TLS, create one if it doesn't yet exist.
-fn with_resolve_table_mut<T>(op: |&mut ResolveTable| -> T) -> T {
-    local_data_key!(resolve_table_key: Rc<RefCell<ResolveTable>>)
+fn with_resolve_table_mut<T, F>(op: F) -> T where
+    F: FnOnce(&mut ResolveTable) -> T,
+{
+    thread_local!(static RESOLVE_TABLE_KEY: RefCell<ResolveTable> = {
+        RefCell::new(HashMap::new())
+    });
 
-    match resolve_table_key.get() {
-        Some(ts) => op(&mut *ts.borrow_mut()),
-        None => {
-            let ts = Rc::new(RefCell::new(HashMap::new()));
-            resolve_table_key.replace(Some(ts.clone()));
-            op(&mut *ts.borrow_mut())
-        }
-    }
+    RESOLVE_TABLE_KEY.with(move |slot| op(&mut *slot.borrow_mut()))
 }
 
 /// Resolve a syntax object to a name, per MTWT.
@@ -180,13 +179,13 @@ fn resolve_internal(id: Ident,
                     resolve_table: &mut ResolveTable) -> Name {
     let key = (id.name, id.ctxt);
 
-    match resolve_table.find(&key) {
+    match resolve_table.get(&key) {
         Some(&name) => return name,
         None => {}
     }
 
     let resolved = {
-        let result = *table.table.borrow().get(id.ctxt as uint);
+        let result = (*table.table.borrow())[id.ctxt as usize];
         match result {
             EmptyCtxt => id.name,
             // ignore marks here:
@@ -209,7 +208,7 @@ fn resolve_internal(id: Ident,
                     resolvedthis
                 }
             }
-            IllegalCtxt => fail!("expected resolvable context, got IllegalCtxt")
+            IllegalCtxt => panic!("expected resolvable context, got IllegalCtxt")
         }
     };
     resolve_table.insert(key, resolved);
@@ -230,7 +229,7 @@ fn marksof_internal(ctxt: SyntaxContext,
     let mut result = Vec::new();
     let mut loopvar = ctxt;
     loop {
-        let table_entry = *table.table.borrow().get(loopvar as uint);
+        let table_entry = (*table.table.borrow())[loopvar as usize];
         match table_entry {
             EmptyCtxt => {
                 return result;
@@ -248,7 +247,7 @@ fn marksof_internal(ctxt: SyntaxContext,
                     loopvar = tl;
                 }
             }
-            IllegalCtxt => fail!("expected resolvable context, got IllegalCtxt")
+            IllegalCtxt => panic!("expected resolvable context, got IllegalCtxt")
         }
     }
 }
@@ -257,9 +256,9 @@ fn marksof_internal(ctxt: SyntaxContext,
 /// FAILS when outside is not a mark.
 pub fn outer_mark(ctxt: SyntaxContext) -> Mrk {
     with_sctable(|sctable| {
-        match *sctable.table.borrow().get(ctxt as uint) {
+        match (*sctable.table.borrow())[ctxt as usize] {
             Mark(mrk, _) => mrk,
-            _ => fail!("can't retrieve outer mark when outside is not a mark")
+            _ => panic!("can't retrieve outer mark when outside is not a mark")
         }
     })
 }
@@ -267,7 +266,7 @@ pub fn outer_mark(ctxt: SyntaxContext) -> Mrk {
 /// Push a name... unless it matches the one on top, in which
 /// case pop and discard (so two of the same marks cancel)
 fn xor_push(marks: &mut Vec<Mrk>, mark: Mrk) {
-    if (marks.len() > 0) && (*marks.last().unwrap() == mark) {
+    if (!marks.is_empty()) && (*marks.last().unwrap() == mark) {
         marks.pop().unwrap();
     } else {
         marks.push(mark);
@@ -276,6 +275,7 @@ fn xor_push(marks: &mut Vec<Mrk>, mark: Mrk) {
 
 #[cfg(test)]
 mod tests {
+    use self::TestSC::*;
     use ast::{EMPTY_CTXT, Ident, Mrk, Name, SyntaxContext};
     use super::{resolve, xor_push, apply_mark_internal, new_sctable_internal};
     use super::{apply_rename_internal, apply_renames, marksof_internal, resolve_internal};
@@ -286,19 +286,19 @@ mod tests {
     fn xorpush_test () {
         let mut s = Vec::new();
         xor_push(&mut s, 14);
-        assert_eq!(s.clone(), vec!(14));
+        assert_eq!(s.clone(), [14]);
         xor_push(&mut s, 14);
-        assert_eq!(s.clone(), Vec::new());
+        assert_eq!(s.clone(), []);
         xor_push(&mut s, 14);
-        assert_eq!(s.clone(), vec!(14));
+        assert_eq!(s.clone(), [14]);
         xor_push(&mut s, 15);
-        assert_eq!(s.clone(), vec!(14, 15));
+        assert_eq!(s.clone(), [14, 15]);
         xor_push(&mut s, 16);
-        assert_eq!(s.clone(), vec!(14, 15, 16));
+        assert_eq!(s.clone(), [14, 15, 16]);
         xor_push(&mut s, 16);
-        assert_eq!(s.clone(), vec!(14, 15));
+        assert_eq!(s.clone(), [14, 15]);
         xor_push(&mut s, 15);
-        assert_eq!(s.clone(), vec!(14));
+        assert_eq!(s.clone(), [14]);
     }
 
     fn id(n: u32, s: SyntaxContext) -> Ident {
@@ -307,7 +307,7 @@ mod tests {
 
     // because of the SCTable, I now need a tidy way of
     // creating syntax objects. Sigh.
-    #[deriving(Clone, PartialEq, Show)]
+    #[derive(Clone, PartialEq, Debug)]
     enum TestSC {
         M(Mrk),
         R(Ident,Name)
@@ -328,7 +328,7 @@ mod tests {
         let mut result = Vec::new();
         loop {
             let table = table.table.borrow();
-            match *table.get(sc as uint) {
+            match (*table)[sc as usize] {
                 EmptyCtxt => {return result;},
                 Mark(mrk,tail) => {
                     result.push(M(mrk));
@@ -340,7 +340,7 @@ mod tests {
                     sc = tail;
                     continue;
                 }
-                IllegalCtxt => fail!("expected resolvable context, got IllegalCtxt")
+                IllegalCtxt => panic!("expected resolvable context, got IllegalCtxt")
             }
         }
     }
@@ -353,9 +353,9 @@ mod tests {
         assert_eq!(unfold_test_sc(test_sc.clone(),EMPTY_CTXT,&mut t),4);
         {
             let table = t.table.borrow();
-            assert!(*table.get(2) == Mark(9,0));
-            assert!(*table.get(3) == Rename(id(101,0),Name(14),2));
-            assert!(*table.get(4) == Mark(3,3));
+            assert!((*table)[2] == Mark(9,0));
+            assert!((*table)[3] == Rename(id(101,0),Name(14),2));
+            assert!((*table)[4] == Mark(3,3));
         }
         assert_eq!(refold_test_sc(4,&t),test_sc);
     }
@@ -374,8 +374,8 @@ mod tests {
         assert_eq!(unfold_marks(vec!(3,7),EMPTY_CTXT,&mut t),3);
         {
             let table = t.table.borrow();
-            assert!(*table.get(2) == Mark(7,0));
-            assert!(*table.get(3) == Mark(3,2));
+            assert!((*table)[2] == Mark(7,0));
+            assert!((*table)[3] == Mark(3,2));
         }
     }
 
@@ -387,29 +387,29 @@ mod tests {
         assert_eq!(marksof_internal (EMPTY_CTXT,stopname,&t),Vec::new());
         // FIXME #5074: ANF'd to dodge nested calls
         { let ans = unfold_marks(vec!(4,98),EMPTY_CTXT,&mut t);
-         assert_eq! (marksof_internal (ans,stopname,&t),vec!(4,98));}
+         assert_eq! (marksof_internal (ans,stopname,&t), [4, 98]);}
         // does xoring work?
         { let ans = unfold_marks(vec!(5,5,16),EMPTY_CTXT,&mut t);
-         assert_eq! (marksof_internal (ans,stopname,&t), vec!(16));}
+         assert_eq! (marksof_internal (ans,stopname,&t), [16]);}
         // does nested xoring work?
         { let ans = unfold_marks(vec!(5,10,10,5,16),EMPTY_CTXT,&mut t);
-         assert_eq! (marksof_internal (ans, stopname,&t), vec!(16));}
+         assert_eq! (marksof_internal (ans, stopname,&t), [16]);}
         // rename where stop doesn't match:
         { let chain = vec!(M(9),
-                        R(id(name1.uint() as u32,
+                        R(id(name1.usize() as u32,
                              apply_mark_internal (4, EMPTY_CTXT,&mut t)),
                           Name(100101102)),
                         M(14));
          let ans = unfold_test_sc(chain,EMPTY_CTXT,&mut t);
-         assert_eq! (marksof_internal (ans, stopname, &t), vec!(9,14));}
+         assert_eq! (marksof_internal (ans, stopname, &t), [9, 14]);}
         // rename where stop does match
         { let name1sc = apply_mark_internal(4, EMPTY_CTXT, &mut t);
          let chain = vec!(M(9),
-                       R(id(name1.uint() as u32, name1sc),
+                       R(id(name1.usize() as u32, name1sc),
                          stopname),
                        M(14));
          let ans = unfold_test_sc(chain,EMPTY_CTXT,&mut t);
-         assert_eq! (marksof_internal (ans, stopname, &t), vec!(9)); }
+         assert_eq! (marksof_internal (ans, stopname, &t), [9]); }
     }
 
 

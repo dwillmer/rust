@@ -9,20 +9,19 @@
 // except according to those terms.
 
 
-use driver::config;
-use driver::session::Session;
-use syntax::ast::{Crate, Name, NodeId, Item, ItemFn};
-use syntax::ast_map;
+use ast_map;
+use session::{config, Session};
+use syntax::ast::{Name, NodeId, Item, ItemFn};
 use syntax::attr;
 use syntax::codemap::Span;
 use syntax::parse::token;
 use syntax::visit;
 use syntax::visit::Visitor;
 
-struct EntryContext<'a> {
+struct EntryContext<'a, 'ast: 'a> {
     session: &'a Session,
 
-    ast_map: &'a ast_map::Map,
+    ast_map: &'a ast_map::Map<'ast>,
 
     // The interned Name for "main".
     main_name: Name,
@@ -41,13 +40,13 @@ struct EntryContext<'a> {
     non_main_fns: Vec<(NodeId, Span)> ,
 }
 
-impl<'a> Visitor<()> for EntryContext<'a> {
-    fn visit_item(&mut self, item: &Item, _:()) {
+impl<'a, 'ast, 'v> Visitor<'v> for EntryContext<'a, 'ast> {
+    fn visit_item(&mut self, item: &Item) {
         find_item(item, self);
     }
 }
 
-pub fn find_entry_point(session: &Session, krate: &Crate, ast_map: &ast_map::Map) {
+pub fn find_entry_point(session: &Session, ast_map: &ast_map::Map) {
     let any_exe = session.crate_types.borrow().iter().any(|ty| {
         *ty == config::CrateTypeExecutable
     });
@@ -57,7 +56,7 @@ pub fn find_entry_point(session: &Session, krate: &Crate, ast_map: &ast_map::Map
     }
 
     // If the user wants no main function at all, then stop here.
-    if attr::contains_name(krate.attrs.as_slice(), "no_main") {
+    if attr::contains_name(&ast_map.krate().attrs, "no_main") {
         session.entry_type.set(Some(config::EntryNone));
         return
     }
@@ -72,7 +71,7 @@ pub fn find_entry_point(session: &Session, krate: &Crate, ast_map: &ast_map::Map
         non_main_fns: Vec::new(),
     };
 
-    visit::walk_crate(&mut ctxt, krate, ());
+    visit::walk_crate(&mut ctxt, ast_map.krate());
 
     configure_main(&mut ctxt);
 }
@@ -81,7 +80,7 @@ fn find_item(item: &Item, ctxt: &mut EntryContext) {
     match item.node {
         ItemFn(..) => {
             if item.ident.name == ctxt.main_name {
-                 ctxt.ast_map.with_path(item.id, |mut path| {
+                 ctxt.ast_map.with_path(item.id, |path| {
                         if path.count() == 1 {
                             // This is a top-level function so can be 'main'
                             if ctxt.main_fn.is_none() {
@@ -97,7 +96,7 @@ fn find_item(item: &Item, ctxt: &mut EntryContext) {
                 });
             }
 
-            if attr::contains_name(item.attrs.as_slice(), "main") {
+            if attr::contains_name(&item.attrs, "main") {
                 if ctxt.attr_main_fn.is_none() {
                     ctxt.attr_main_fn = Some((item.id, item.span));
                 } else {
@@ -106,7 +105,7 @@ fn find_item(item: &Item, ctxt: &mut EntryContext) {
                 }
             }
 
-            if attr::contains_name(item.attrs.as_slice(), "start") {
+            if attr::contains_name(&item.attrs, "start") {
                 if ctxt.start_fn.is_none() {
                     ctxt.start_fn = Some((item.id, item.span));
                 } else {
@@ -118,7 +117,7 @@ fn find_item(item: &Item, ctxt: &mut EntryContext) {
         _ => ()
     }
 
-    visit::walk_item(ctxt, item, ());
+    visit::walk_item(ctxt, item);
 }
 
 fn configure_main(this: &mut EntryContext) {
@@ -140,7 +139,7 @@ fn configure_main(this: &mut EntryContext) {
                                but you have one or more functions named 'main' that are not \
                                defined at the crate level. Either move the definition or \
                                attach the `#[main]` attribute to override this behavior.");
-            for &(_, span) in this.non_main_fns.iter() {
+            for &(_, span) in &this.non_main_fns {
                 this.session.span_note(span, "here is a function named 'main'");
             }
             this.session.abort_if_errors();

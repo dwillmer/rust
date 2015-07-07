@@ -15,19 +15,18 @@
 
 // error-pattern: transmute called on types with different size
 
-extern crate debug;
-
 use std::mem;
 
 #[repr(packed)]
 struct Foo {
     bar: u8,
-    baz: uint
+    baz: usize
 }
 
+#[derive(Debug)]
 struct Oof {
     rab: u8,
-    zab: uint
+    zab: usize
 }
 
 fn main() {

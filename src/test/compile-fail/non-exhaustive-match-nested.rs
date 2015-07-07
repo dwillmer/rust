@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(slice_patterns)]
+
 enum t { a(u), b }
 enum u { c, d }
 
@@ -21,9 +23,9 @@ fn match_nested_vecs<'a, T>(l1: Option<&'a [T]>, l2: Result<&'a [T], ()>) -> &'s
 }
 
 fn main() {
-    let x = a(c);
+    let x = t::a(u::c);
     match x { //~ ERROR non-exhaustive patterns: `a(c)` not covered
-        a(d) => { fail!("hello"); }
-        b => { fail!("goodbye"); }
+        t::a(u::d) => { panic!("hello"); }
+        t::b => { panic!("goodbye"); }
     }
 }

@@ -8,102 +8,59 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::fmt;
 use std::default::Default;
-use std::hash;
-use std::{mem, raw, ptr, slice};
+use std::fmt;
+use std::iter::{IntoIterator, FromIterator};
+use std::ops::Deref;
+use std::vec;
 use serialize::{Encodable, Decodable, Encoder, Decoder};
 
-/// A non-growable owned slice. This would preferably become `~[T]`
-/// under DST.
-#[unsafe_no_drop_flag] // data is set to null on destruction
+/// A non-growable owned slice. This is a separate type to allow the
+/// representation to change.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OwnedSlice<T> {
-    /// null iff len == 0
-    data: *mut T,
-    len: uint,
+    data: Box<[T]>
 }
 
-impl<T:fmt::Show> fmt::Show for OwnedSlice<T> {
+impl<T:fmt::Debug> fmt::Debug for OwnedSlice<T> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        try!("OwnedSlice {{".fmt(fmt));
-        for i in self.iter() {
-            try!(i.fmt(fmt));
-        }
-        try!("}}".fmt(fmt));
-        Ok(())
-    }
-}
-
-#[unsafe_destructor]
-impl<T> Drop for OwnedSlice<T> {
-    fn drop(&mut self) {
-        if self.data.is_null() { return }
-
-        // extract the vector
-        let v = mem::replace(self, OwnedSlice::empty());
-        // free via the Vec destructor
-        v.into_vec();
+        self.data.fmt(fmt)
     }
 }
 
 impl<T> OwnedSlice<T> {
     pub fn empty() -> OwnedSlice<T> {
-        OwnedSlice  { data: ptr::mut_null(), len: 0 }
+        OwnedSlice  { data: Box::new([]) }
     }
 
     #[inline(never)]
-    pub fn from_vec(mut v: Vec<T>) -> OwnedSlice<T> {
-        let len = v.len();
-
-        if len == 0 {
-            OwnedSlice::empty()
-        } else {
-            let p = v.as_mut_ptr();
-            // we own the allocation now
-            unsafe {mem::forget(v)}
-
-            OwnedSlice { data: p, len: len }
-        }
+    pub fn from_vec(v: Vec<T>) -> OwnedSlice<T> {
+        OwnedSlice { data: v.into_boxed_slice() }
     }
 
     #[inline(never)]
     pub fn into_vec(self) -> Vec<T> {
-        // null is ok, because len == 0 in that case, as required by Vec.
-        unsafe {
-            let ret = Vec::from_raw_parts(self.len, self.len, self.data);
-            // the vector owns the allocation now
-            mem::forget(self);
-            ret
-        }
+        self.data.into_vec()
     }
 
     pub fn as_slice<'a>(&'a self) -> &'a [T] {
-        static PTR_MARKER: u8 = 0;
-        let ptr = if self.data.is_null() {
-            // length zero, i.e. this will never be read as a T.
-            &PTR_MARKER as *const u8 as *const T
-        } else {
-            self.data as *const T
-        };
-
-        let slice: &[T] = unsafe {mem::transmute(raw::Slice {
-            data: ptr,
-            len: self.len
-        })};
-
-        slice
+        &*self.data
     }
 
-    pub fn get<'a>(&'a self, i: uint) -> &'a T {
-        self.as_slice().get(i).expect("OwnedSlice: index out of bounds")
+    pub fn move_iter(self) -> vec::IntoIter<T> {
+        self.into_vec().into_iter()
     }
 
-    pub fn iter<'r>(&'r self) -> slice::Items<'r, T> {
-        self.as_slice().iter()
-    }
-
-    pub fn map<U>(&self, f: |&T| -> U) -> OwnedSlice<U> {
+    pub fn map<U, F: FnMut(&T) -> U>(&self, f: F) -> OwnedSlice<U> {
         self.iter().map(f).collect()
+    }
+}
+
+impl<T> Deref for OwnedSlice<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        self.as_slice()
     }
 }
 
@@ -115,42 +72,24 @@ impl<T> Default for OwnedSlice<T> {
 
 impl<T: Clone> Clone for OwnedSlice<T> {
     fn clone(&self) -> OwnedSlice<T> {
-        OwnedSlice::from_vec(Vec::from_slice(self.as_slice()))
+        OwnedSlice::from_vec(self.to_vec())
     }
-}
-
-impl<S: hash::Writer, T: hash::Hash<S>> hash::Hash<S> for OwnedSlice<T> {
-    fn hash(&self, state: &mut S) {
-        self.as_slice().hash(state)
-    }
-}
-
-impl<T: PartialEq> PartialEq for OwnedSlice<T> {
-    fn eq(&self, other: &OwnedSlice<T>) -> bool {
-        self.as_slice() == other.as_slice()
-    }
-}
-
-impl<T: Eq> Eq for OwnedSlice<T> {}
-
-impl<T> Collection for OwnedSlice<T> {
-    fn len(&self) -> uint { self.len }
 }
 
 impl<T> FromIterator<T> for OwnedSlice<T> {
-    fn from_iter<I: Iterator<T>>(mut iter: I) -> OwnedSlice<T> {
-        OwnedSlice::from_vec(iter.collect())
+    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> OwnedSlice<T> {
+        OwnedSlice::from_vec(iter.into_iter().collect())
     }
 }
 
-impl<S: Encoder<E>, T: Encodable<S, E>, E> Encodable<S, E> for OwnedSlice<T> {
-    fn encode(&self, s: &mut S) -> Result<(), E> {
-       self.as_slice().encode(s)
+impl<T: Encodable> Encodable for OwnedSlice<T> {
+    fn encode<S: Encoder>(&self, s: &mut S) -> Result<(), S::Error> {
+        Encodable::encode(&**self, s)
     }
 }
 
-impl<D: Decoder<E>, T: Decodable<D, E>, E> Decodable<D, E> for OwnedSlice<T> {
-    fn decode(d: &mut D) -> Result<OwnedSlice<T>, E> {
+impl<T: Decodable> Decodable for OwnedSlice<T> {
+    fn decode<D: Decoder>(d: &mut D) -> Result<OwnedSlice<T>, D::Error> {
         Ok(OwnedSlice::from_vec(match Decodable::decode(d) {
             Ok(t) => t,
             Err(e) => return Err(e)

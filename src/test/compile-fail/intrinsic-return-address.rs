@@ -20,12 +20,10 @@ unsafe fn f() {
     //~^ ERROR invalid use of `return_address` intrinsic: function does not use out pointer
 }
 
-unsafe fn g() -> int {
+unsafe fn g() -> isize {
     let _ = return_address();
     //~^ ERROR invalid use of `return_address` intrinsic: function does not use out pointer
     0
 }
 
 fn main() {}
-
-

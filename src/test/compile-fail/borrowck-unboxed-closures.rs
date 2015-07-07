@@ -8,22 +8,21 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![feature(overloaded_calls)]
+#![feature(overloaded_calls, unboxed_closures)]
 
-fn a<F:|&: int, int| -> int>(mut f: F) {
+fn a<F:Fn(isize, isize) -> isize>(mut f: F) {
     let g = &mut f;
     f(1, 2);    //~ ERROR cannot borrow `f` as immutable
     //~^ ERROR cannot borrow `f` as immutable
 }
 
-fn b<F:|&mut: int, int| -> int>(f: F) {
-    f(1, 2);    //~ ERROR cannot borrow immutable argument
+fn b<F:FnMut(isize, isize) -> isize>(f: F) {
+    f(1, 2);    //~ ERROR cannot borrow immutable local variable
 }
 
-fn c<F:|: int, int| -> int>(f: F) {
+fn c<F:FnOnce(isize, isize) -> isize>(f: F) {
     f(1, 2);
     f(1, 2);    //~ ERROR use of moved value
 }
 
 fn main() {}
-

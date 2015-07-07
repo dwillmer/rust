@@ -12,44 +12,47 @@
 // access to the variable, whether that mutable access be used
 // for direct assignment or for taking mutable ref. Issue #6801.
 
+#![feature(box_syntax)]
+
+fn to_fn_mut<F: FnMut()>(f: F) -> F { f }
 
 fn a() {
-    let mut x = 3i;
-    let c1 = || x = 4;
-    let c2 = || x = 5; //~ ERROR cannot borrow `x` as mutable more than once
+    let mut x = 3;
+    let c1 = to_fn_mut(|| x = 4);
+    let c2 = to_fn_mut(|| x = 5); //~ ERROR cannot borrow `x` as mutable more than once
 }
 
-fn set(x: &mut int) {
+fn set(x: &mut isize) {
     *x = 4;
 }
 
 fn b() {
-    let mut x = 3i;
-    let c1 = || set(&mut x);
-    let c2 = || set(&mut x); //~ ERROR cannot borrow `x` as mutable more than once
+    let mut x = 3;
+    let c1 = to_fn_mut(|| set(&mut x));
+    let c2 = to_fn_mut(|| set(&mut x)); //~ ERROR cannot borrow `x` as mutable more than once
 }
 
 fn c() {
-    let mut x = 3i;
-    let c1 = || x = 5;
-    let c2 = || set(&mut x); //~ ERROR cannot borrow `x` as mutable more than once
+    let mut x = 3;
+    let c1 = to_fn_mut(|| x = 5);
+    let c2 = to_fn_mut(|| set(&mut x)); //~ ERROR cannot borrow `x` as mutable more than once
 }
 
 fn d() {
-    let mut x = 3i;
-    let c1 = || x = 5;
-    let c2 = || { let _y = || set(&mut x); }; // (nested closure)
+    let mut x = 3;
+    let c1 = to_fn_mut(|| x = 5);
+    let c2 = to_fn_mut(|| { let _y = to_fn_mut(|| set(&mut x)); }); // (nested closure)
     //~^ ERROR cannot borrow `x` as mutable more than once
 }
 
 fn g() {
     struct Foo {
-        f: Box<int>
+        f: Box<isize>
     }
 
-    let mut x = box Foo { f: box 3 };
-    let c1 = || set(&mut *x.f);
-    let c2 = || set(&mut *x.f);
+    let mut x: Box<_> = box Foo { f: box 3 };
+    let c1 = to_fn_mut(|| set(&mut *x.f));
+    let c2 = to_fn_mut(|| set(&mut *x.f));
     //~^ ERROR cannot borrow `x` as mutable more than once
 }
 

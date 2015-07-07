@@ -8,7 +8,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-trait Trait {}
+trait Trait {
+    fn dummy(&self) { }
+}
 
 struct Foo<T:Trait> {
     x: T,
@@ -16,12 +18,10 @@ struct Foo<T:Trait> {
 
 fn main() {
     let foo = Foo {
-    //~^ ERROR failed to find an implementation
-    //~^^ ERROR instantiating a type parameter with an incompatible type
-        x: 3i
+    //~^ ERROR not implemented
+        x: 3
     };
-    let baz: Foo<uint> = fail!();
-    //~^ ERROR failed to find an implementation
-    //~^^ ERROR instantiating a type parameter with an incompatible type
-}
 
+    let baz: Foo<usize> = panic!();
+    //~^ ERROR not implemented
+}

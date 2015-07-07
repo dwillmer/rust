@@ -8,28 +8,26 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+// pretty-expanded FIXME #23616
+
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// Tests that the new `box` syntax works with unique pointers and GC pointers.
+#![allow(warnings)]
+#![feature(box_syntax, box_heap)]
 
-use std::gc::{Gc, GC};
+// Tests that the new `box` syntax works with unique pointers.
+
 use std::boxed::{Box, HEAP};
 
 struct Structure {
-    x: int,
-    y: int,
+    x: isize,
+    y: isize,
 }
 
 pub fn main() {
-    let x: Box<int> = box(HEAP) 2i;
-    let y: Box<int> = box 2i;
-    let z: Gc<int> = box(GC) 2i;
-    let a: Gc<Structure> = box(GC) Structure {
-        x: 10,
-        y: 20,
-    };
-    let b: Box<int> = box()(1i + 2);
-    let c = box()(3i + 4);
-    let d = box(GC)(5i + 6);
+    let x: Box<isize> = box(HEAP) 2;
+    let y: Box<isize> = box 2;
+    let b: Box<isize> = box()(1 + 2);
+    let c = box()(3 + 4);
 }

@@ -8,18 +8,20 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![feature(box_syntax)]
+
 // Issue #12470.
 
 trait X {
-    fn get_i(&self) -> int;
+    fn get_i(&self) -> isize;
 }
 
 struct B {
-    i: int
+    i: isize
 }
 
 impl X for B {
-    fn get_i(&self) -> int {
+    fn get_i(&self) -> isize {
         self.i
     }
 }
@@ -31,7 +33,7 @@ impl Drop for B {
 }
 
 struct A<'r> {
-    p: &'r X+'r
+    p: &'r (X+'r)
 }
 
 fn make_a(p:&X) -> A {

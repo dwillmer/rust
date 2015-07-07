@@ -10,16 +10,9 @@
 
 //! Operations and constants for signed 64-bits integers (`i64` type)
 
-#![unstable]
+#![stable(feature = "rust1", since = "1.0.0")]
 #![doc(primitive = "i64")]
-
-use from_str::FromStr;
-use num::{ToStrRadix, FromStrRadix};
-use num::strconv;
-use option::Option;
-use slice::ImmutableSlice;
-use string::String;
 
 pub use core::i64::{BITS, BYTES, MIN, MAX};
 
-int_module!(i64)
+int_module! { i64 }

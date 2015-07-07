@@ -7,45 +7,49 @@
 // <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
-#![crate_id="inherited_stability#0.1"]
+#![crate_name="inherited_stability"]
 #![crate_type = "lib"]
-#![experimental]
+#![unstable(feature = "test_feature")]
+#![feature(staged_api)]
+#![staged_api]
 
-pub fn experimental() {}
+pub fn unstable() {}
 
-#[stable]
+#[stable(feature = "rust1", since = "1.0.0")]
 pub fn stable() {}
 
-#[stable]
+#[stable(feature = "rust1", since = "1.0.0")]
 pub mod stable_mod {
-    #[experimental]
-    pub fn experimental() {}
+    pub fn unstable() {}
 
+    #[stable(feature = "rust1", since = "1.0.0")]
     pub fn stable() {}
 }
 
-pub mod experimental_mod {
-    pub fn experimental() {}
+#[unstable(feature = "test_feature")]
+pub mod unstable_mod {
+    #[stable(feature = "test_feature", since = "1.0.0")]
+    #[deprecated(since = "1.0.0")]
+    pub fn deprecated() {}
 
-    #[stable]
-    pub fn stable() {}
+    pub fn unstable() {}
 }
 
-#[stable]
+#[stable(feature = "rust1", since = "1.0.0")]
 pub trait Stable {
-    #[experimental]
-    fn experimental(&self);
+    fn unstable(&self);
 
+    #[stable(feature = "rust1", since = "1.0.0")]
     fn stable(&self);
 }
 
-impl Stable for uint {
-    fn experimental(&self) {}
+impl Stable for usize {
+    fn unstable(&self) {}
     fn stable(&self) {}
 }
 
-pub enum Experimental {
-    ExperimentalVariant,
-    #[stable]
+pub enum Unstable {
+    UnstableVariant,
+    #[stable(feature = "rust1", since = "1.0.0")]
     StableVariant
 }

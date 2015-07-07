@@ -8,11 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-trait A {
+pub trait A {
     fn frob(&self);
 }
 
-impl A for int { fn frob(&self) {} }
+impl A for isize { fn frob(&self) {} }
 
 pub fn frob<T:A>(t: T) {
     t.frob();

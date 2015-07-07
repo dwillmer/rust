@@ -10,9 +10,9 @@
 
 // Test that we do not permit moves from &[] matched by a vec pattern.
 
-extern crate debug;
+#![feature(slice_patterns)]
 
-#[deriving(Clone)]
+#[derive(Clone, Debug)]
 struct Foo {
     string: String
 }
@@ -23,11 +23,11 @@ pub fn main() {
         Foo { string: "bar".to_string() },
         Foo { string: "baz".to_string() }
     );
-    let x: &[Foo] = x.as_slice();
+    let x: &[Foo] = &x;
     match x {
-        [_, ..tail] => {
+        [_, tail..] => {
             match tail {
-                [Foo { string: a }, //~ ERROR cannot move out of dereference of `&`-pointer
+                [Foo { string: a }, //~ ERROR cannot move out of borrowed content
                  Foo { string: b }] => {
                     //~^^ NOTE attempting to move value to here
                     //~^^ NOTE and here

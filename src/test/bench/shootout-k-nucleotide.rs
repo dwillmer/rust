@@ -38,16 +38,23 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
 // OF THE POSSIBILITY OF SUCH DAMAGE.
 
-// ignore-android see #10393 #13206
+// ignore-android: FIXME(#10393) hangs without output
 
-use std::string::String;
+#![feature(box_syntax, owned_ascii_ext, vec_push_all)]
+
+use std::ascii::OwnedAsciiExt;
+use std::env;
+use std::fs::File;
+use std::io::prelude::*;
+use std::io;
 use std::slice;
-use std::sync::{Arc, Future};
+use std::sync::Arc;
+use std::thread;
 
-static TABLE: [u8, ..4] = [ 'A' as u8, 'C' as u8, 'G' as u8, 'T' as u8 ];
-static TABLE_SIZE: uint = 2 << 16;
+static TABLE: [u8;4] = [ 'A' as u8, 'C' as u8, 'G' as u8, 'T' as u8 ];
+static TABLE_SIZE: usize = 2 << 16;
 
-static OCCURRENCES: [&'static str, ..5] = [
+static OCCURRENCES: [&'static str;5] = [
     "GGT",
     "GGTA",
     "GGTATT",
@@ -57,7 +64,7 @@ static OCCURRENCES: [&'static str, ..5] = [
 
 // Code implementation
 
-#[deriving(PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Copy, Clone, PartialEq, PartialOrd, Ord, Eq)]
 struct Code(u64);
 
 impl Code {
@@ -70,18 +77,18 @@ impl Code {
         Code((self.hash() << 2) + (pack_symbol(c) as u64))
     }
 
-    fn rotate(&self, c: u8, frame: uint) -> Code {
-        Code(self.push_char(c).hash() & ((1u64 << (2 * frame)) - 1))
+    fn rotate(&self, c: u8, frame: usize) -> Code {
+        Code(self.push_char(c).hash() & ((1 << (2 * frame)) - 1))
     }
 
     fn pack(string: &str) -> Code {
-        string.bytes().fold(Code(0u64), |a, b| a.push_char(b))
+        string.bytes().fold(Code(0), |a, b| a.push_char(b))
     }
 
-    fn unpack(&self, frame: uint) -> String {
+    fn unpack(&self, frame: usize) -> String {
         let mut key = self.hash();
         let mut result = Vec::new();
-        for _ in range(0, frame) {
+        for _ in 0..frame {
             result.push(unpack_symbol((key as u8) & 3));
             key >>= 2;
         }
@@ -110,37 +117,36 @@ struct PrintCallback(&'static str);
 impl TableCallback for PrintCallback {
     fn f(&self, entry: &mut Entry) {
         let PrintCallback(s) = *self;
-        println!("{}\t{}", entry.count as int, s);
+        println!("{}\t{}", entry.count, s);
     }
 }
 
 struct Entry {
     code: Code,
-    count: uint,
+    count: usize,
     next: Option<Box<Entry>>,
 }
 
 struct Table {
-    count: uint,
-    items: Vec<Option<Box<Entry>>> }
+    items: Vec<Option<Box<Entry>>>
+}
 
 struct Items<'a> {
     cur: Option<&'a Entry>,
-    items: slice::Items<'a, Option<Box<Entry>>>,
+    items: slice::Iter<'a, Option<Box<Entry>>>,
 }
 
 impl Table {
     fn new() -> Table {
         Table {
-            count: 0,
-            items: Vec::from_fn(TABLE_SIZE, |_| None),
+            items: (0..TABLE_SIZE).map(|_| None).collect()
         }
     }
 
     fn search_remainder<C:TableCallback>(item: &mut Entry, key: Code, c: C) {
         match item.next {
             None => {
-                let mut entry = box Entry {
+                let mut entry: Box<_> = box Entry {
                     code: key,
                     count: 0,
                     next: None,
@@ -163,20 +169,20 @@ impl Table {
         let index = key.hash() % (TABLE_SIZE as u64);
 
         {
-            if self.items.get(index as uint).is_none() {
-                let mut entry = box Entry {
+            if self.items[index as usize].is_none() {
+                let mut entry: Box<_> = box Entry {
                     code: key,
                     count: 0,
                     next: None,
                 };
                 c.f(&mut *entry);
-                *self.items.get_mut(index as uint) = Some(entry);
+                self.items[index as usize] = Some(entry);
                 return;
             }
         }
 
         {
-            let entry = &mut *self.items.get_mut(index as uint).get_mut_ref();
+            let entry = self.items[index as usize].as_mut().unwrap();
             if entry.code == key {
                 c.f(&mut **entry);
                 return;
@@ -191,7 +197,9 @@ impl Table {
     }
 }
 
-impl<'a> Iterator<&'a Entry> for Items<'a> {
+impl<'a> Iterator for Items<'a> {
+    type Item = &'a Entry;
+
     fn next(&mut self) -> Option<&'a Entry> {
         let ret = match self.cur {
             None => {
@@ -224,49 +232,49 @@ fn pack_symbol(c: u8) -> u8 {
         'C' => 1,
         'G' => 2,
         'T' => 3,
-        _ => fail!("{}", c as char),
+        _ => panic!("{}", c as char),
     }
 }
 
 fn unpack_symbol(c: u8) -> u8 {
-    TABLE[c as uint]
+    TABLE[c as usize]
 }
 
-fn generate_frequencies(mut input: &[u8], frame: uint) -> Table {
+fn generate_frequencies(mut input: &[u8], frame: usize) -> Table {
     let mut frequencies = Table::new();
     if input.len() < frame { return frequencies; }
     let mut code = Code(0);
 
     // Pull first frame.
-    for _ in range(0, frame) {
+    for _ in 0..frame {
         code = code.push_char(input[0]);
-        input = input.slice_from(1);
+        input = &input[1..];
     }
     frequencies.lookup(code, BumpCallback);
 
-    while input.len() != 0 && input[0] != ('>' as u8) {
+    while !input.is_empty() && input[0] != ('>' as u8) {
         code = code.rotate(input[0], frame);
         frequencies.lookup(code, BumpCallback);
-        input = input.slice_from(1);
+        input = &input[1..];
     }
     frequencies
 }
 
-fn print_frequencies(frequencies: &Table, frame: uint) {
+fn print_frequencies(frequencies: &Table, frame: usize) {
     let mut vector = Vec::new();
     for entry in frequencies.iter() {
         vector.push((entry.count, entry.code));
     }
-    vector.as_mut_slice().sort();
+    vector.sort();
 
     let mut total_count = 0;
-    for &(count, _) in vector.iter() {
+    for &(count, _) in &vector {
         total_count += count;
     }
 
     for &(count, key) in vector.iter().rev() {
-        println!("{} {:.3f}",
-                 key.unpack(frame).as_slice(),
+        println!("{} {:.3}",
+                 key.unpack(frame),
                  (count as f32 * 100.0) / (total_count as f32));
     }
     println!("");
@@ -276,41 +284,40 @@ fn print_occurrences(frequencies: &mut Table, occurrence: &'static str) {
     frequencies.lookup(Code::pack(occurrence), PrintCallback(occurrence))
 }
 
-fn get_sequence<R: Buffer>(r: &mut R, key: &str) -> Vec<u8> {
+fn get_sequence<R: BufRead>(r: &mut R, key: &str) -> Vec<u8> {
     let mut res = Vec::new();
-    for l in r.lines().map(|l| l.ok().unwrap())
-        .skip_while(|l| key != l.as_slice().slice_to(key.len())).skip(1)
+    for l in r.lines().map(|l| l.unwrap())
+        .skip_while(|l| key != &l[..key.len()]).skip(1)
     {
-        res.push_all(l.as_slice().trim().as_bytes());
+        res.push_all(l.trim().as_bytes());
     }
-    for b in res.mut_iter() {
-        *b = b.to_ascii().to_upper().to_byte();
-    }
-    res
+    res.into_ascii_uppercase()
 }
 
 fn main() {
-    let input = if std::os::getenv("RUST_BENCH").is_some() {
-        let fd = std::io::File::open(&Path::new("shootout-k-nucleotide.data"));
-        get_sequence(&mut std::io::BufferedReader::new(fd), ">THREE")
+    let input = if env::var_os("RUST_BENCH").is_some() {
+        let f = File::open("shootout-k-nucleotide.data").unwrap();
+        get_sequence(&mut io::BufReader::new(f), ">THREE")
     } else {
-        get_sequence(&mut std::io::stdin(), ">THREE")
+        let stdin = io::stdin();
+        let mut stdin = stdin.lock();
+        get_sequence(&mut stdin, ">THREE")
     };
     let input = Arc::new(input);
 
-    let nb_freqs: Vec<(uint, Future<Table>)> = range(1u, 3).map(|i| {
+    let nb_freqs: Vec<_> = (1..3).map(|i| {
         let input = input.clone();
-        (i, Future::spawn(proc() generate_frequencies(input.as_slice(), i)))
+        (i, thread::spawn(move|| generate_frequencies(&input, i)))
     }).collect();
-    let occ_freqs: Vec<Future<Table>> = OCCURRENCES.iter().map(|&occ| {
+    let occ_freqs: Vec<_> = OCCURRENCES.iter().map(|&occ| {
         let input = input.clone();
-        Future::spawn(proc() generate_frequencies(input.as_slice(), occ.len()))
+        thread::spawn(move|| generate_frequencies(&input, occ.len()))
     }).collect();
 
-    for (i, freq) in nb_freqs.move_iter() {
-        print_frequencies(&freq.unwrap(), i);
+    for (i, freq) in nb_freqs {
+        print_frequencies(&freq.join().unwrap(), i);
     }
-    for (&occ, freq) in OCCURRENCES.iter().zip(occ_freqs.move_iter()) {
-        print_occurrences(&mut freq.unwrap(), occ);
+    for (&occ, freq) in OCCURRENCES.iter().zip(occ_freqs) {
+        print_occurrences(&mut freq.join().unwrap(), occ);
     }
 }

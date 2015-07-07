@@ -13,11 +13,11 @@
 // This aux-file will require the eh_personality function to be codegen'd, but
 // it hasn't been defined just yet. Make sure we don't explode.
 
+#![feature(no_std, core)]
 #![no_std]
-#![feature(phase)]
 #![crate_type = "rlib"]
 
-#[phase(plugin, link)]
+#[macro_use]
 extern crate core;
 
 struct A;
@@ -28,10 +28,9 @@ impl core::ops::Drop for A {
 
 pub fn foo() {
     let _a = A;
-    fail!("wut");
+    panic!("wut");
 }
 
 mod std {
     pub use core::{option, fmt};
 }
-

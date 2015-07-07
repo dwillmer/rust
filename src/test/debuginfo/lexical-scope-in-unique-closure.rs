@@ -8,41 +8,34 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-// ignore-android: FIXME(#10381)
+// min-lldb-version: 310
 
 // compile-flags:-g
 
 // === GDB TESTS ===================================================================================
 
-// gdb-command:rbreak zzz
 // gdb-command:run
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$1 = false
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$2 = false
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$3 = 1000
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$4 = 2.5
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$5 = true
 // gdb-command:continue
 
-// gdb-command:finish
 // gdb-command:print x
 // gdb-check:$6 = false
 // gdb-command:continue
@@ -76,6 +69,9 @@
 // lldb-check:[...]$5 = false
 // lldb-command:continue
 
+
+#![omit_gdb_pretty_printer_section]
+
 fn main() {
 
     let x = false;
@@ -83,7 +79,7 @@ fn main() {
     zzz(); // #break
     sentinel();
 
-    let unique_closure: proc(int) = proc(x) {
+    let unique_closure = |x:isize| {
         zzz(); // #break
         sentinel();
 

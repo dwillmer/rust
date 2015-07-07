@@ -13,13 +13,13 @@
 fn assert_send<T:Send>() { }
 
 // owned content are ok
-fn test30() { assert_send::<Box<int>>(); }
+fn test30() { assert_send::<Box<isize>>(); }
 fn test31() { assert_send::<String>(); }
-fn test32() { assert_send::<Vec<int> >(); }
+fn test32() { assert_send::<Vec<isize> >(); }
 
 // but not if they own a bad thing
-fn test40<'a>(_: &'a int) {
-    assert_send::<Box<&'a int>>(); //~ ERROR does not fulfill the required lifetime
+fn test40() {
+    assert_send::<Box<*mut u8>>(); //~ ERROR `core::marker::Send` is not implemented
 }
 
 fn main() { }

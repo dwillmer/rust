@@ -17,6 +17,10 @@ fn main() {
     // This used to cause internal errors when serializing
     // because the def_id associated with the type was
     // not convertible to a path.
-  let x: int = noexporttypelib::foo();
-    //~^ ERROR expected `int`, found `core::option::Option<int>`
+  let x: isize = noexporttypelib::foo();
+    //~^ ERROR mismatched types
+    //~| expected `isize`
+    //~| found `core::option::Option<isize>`
+    //~| expected isize
+    //~| found enum `core::option::Option`
 }

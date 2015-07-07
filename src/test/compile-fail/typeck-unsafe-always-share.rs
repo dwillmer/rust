@@ -10,34 +10,33 @@
 
 // Verify that UnsafeCell is *always* sync regardless if `T` is sync.
 
-// ignore-tidy-linelength
+#![feature(optin_builtin_traits)]
 
 use std::cell::UnsafeCell;
-use std::kinds::marker;
+use std::marker::Sync;
 
 struct MySync<T> {
     u: UnsafeCell<T>
 }
 
-struct NoSync {
-    m: marker::NoSync
-}
+struct NoSync;
+impl !Sync for NoSync {}
 
-fn test<T: Sync>(s: T){
-
-}
+fn test<T: Sync>(s: T) {}
 
 fn main() {
-    let us = UnsafeCell::new(MySync{u: UnsafeCell::new(0i)});
+    let us = UnsafeCell::new(MySync{u: UnsafeCell::new(0)});
     test(us);
+    //~^ ERROR `core::marker::Sync` is not implemented
 
-    let uns = UnsafeCell::new(NoSync{m: marker::NoSync});
+    let uns = UnsafeCell::new(NoSync);
     test(uns);
+    //~^ ERROR `core::marker::Sync` is not implemented
 
     let ms = MySync{u: uns};
     test(ms);
+    //~^ ERROR `core::marker::Sync` is not implemented
 
-    let ns = NoSync{m: marker::NoSync};
-    test(ns);
-    //~^ ERROR instantiating a type parameter with an incompatible type `NoSync`, which does not fulfill `Sync`
+    test(NoSync);
+    //~^ ERROR `core::marker::Sync` is not implemented
 }

@@ -8,13 +8,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-fn call_f(f: proc() -> int) -> int {
+#![feature(box_syntax)]
+
+fn call_f<F:FnOnce() -> isize>(f: F) -> isize {
     f()
 }
 
 fn main() {
-    let t = box 3;
+    let t: Box<_> = box 3;
 
-    call_f(proc() { *t + 1 });
-    call_f(proc() { *t + 1 }); //~ ERROR capture of moved value
+    call_f(move|| { *t + 1 });
+    call_f(move|| { *t + 1 }); //~ ERROR capture of moved value
 }

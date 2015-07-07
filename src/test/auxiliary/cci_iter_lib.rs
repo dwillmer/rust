@@ -8,14 +8,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![crate_id="cci_iter_lib"]
+#![crate_name="cci_iter_lib"]
 
 #[inline]
-pub fn iter<T>(v: &[T], f: |&T|) {
-    let mut i = 0u;
+pub fn iter<T, F>(v: &[T], mut f: F) where F: FnMut(&T) {
+    let mut i = 0;
     let n = v.len();
     while i < n {
         f(&v[i]);
-        i += 1u;
+        i += 1;
     }
 }

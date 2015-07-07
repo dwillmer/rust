@@ -8,8 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![allow(unknown_features)]
+#![feature(box_syntax)]
+
 fn match_on_local() {
-    let mut foo = Some(box 5i);
+    let mut foo: Option<Box<_>> = Some(box 5);
     match foo {
         None => {},
         Some(x) => {
@@ -19,7 +22,7 @@ fn match_on_local() {
     println!("'{}'", foo.unwrap());
 }
 
-fn match_on_arg(mut foo: Option<Box<int>>) {
+fn match_on_arg(mut foo: Option<Box<i32>>) {
     match foo {
         None => {}
         Some(x) => {
@@ -30,7 +33,7 @@ fn match_on_arg(mut foo: Option<Box<int>>) {
 }
 
 fn match_on_binding() {
-    match Some(box 7i) {
+    match Some(Box::new(7)) {
         mut foo => {
             match foo {
                 None => {},
@@ -44,8 +47,8 @@ fn match_on_binding() {
 }
 
 fn match_on_upvar() {
-    let mut foo = Some(box 8i);
-    (proc() {
+    let mut foo: Option<Box<_>> = Some(box 8);
+    let f = move|| {
         match foo {
             None => {},
             Some(x) => {
@@ -53,12 +56,13 @@ fn match_on_upvar() {
             }
         }
         println!("'{}'", foo.unwrap());
-    })();
+    };
+    f();
 }
 
 fn main() {
     match_on_local();
-    match_on_arg(Some(box 6i));
+    match_on_arg(Some(box 6));
     match_on_binding();
     match_on_upvar();
 }

@@ -8,52 +8,94 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-/*!
+//! The Rust compiler.
+//!
+//! # Note
+//!
+//! This API is completely unstable and subject to change.
 
-The Rust compiler.
-
-# Note
-
-This API is completely unstable and subject to change.
-
-*/
-
+// Do not remove on snapshot creation. Needed for bootstrap. (Issue #22364)
+#![cfg_attr(stage0, feature(custom_attribute))]
 #![crate_name = "rustc"]
-#![experimental]
-#![comment = "The Rust compiler"]
-#![license = "MIT/ASL2"]
+#![unstable(feature = "rustc_private")]
+#![staged_api]
 #![crate_type = "dylib"]
 #![crate_type = "rlib"]
 #![doc(html_logo_url = "http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png",
-      html_favicon_url = "http://www.rust-lang.org/favicon.ico",
-      html_root_url = "http://doc.rust-lang.org/master/")]
+      html_favicon_url = "https://doc.rust-lang.org/favicon.ico",
+      html_root_url = "http://doc.rust-lang.org/nightly/")]
 
-#![allow(deprecated)]
-#![feature(macro_rules, globs, struct_variant, managed_boxes, quote)]
-#![feature(default_type_params, phase, unsafe_destructor)]
-
-#![allow(unknown_features)] // NOTE: Remove after next snapshot
+#![feature(append)]
+#![feature(associated_consts)]
+#![feature(box_patterns)]
+#![feature(box_syntax)]
+#![feature(clone_from_slice)]
+#![feature(collections)]
+#![feature(const_fn)]
+#![feature(duration)]
+#![feature(duration_span)]
+#![feature(dynamic_lib)]
+#![feature(enumset)]
+#![feature(fs_canonicalize)]
+#![feature(hash_default)]
+#![feature(hashmap_hasher)]
+#![feature(into_cow)]
+#![feature(iter_cmp)]
+#![feature(iter_arith)]
+#![feature(libc)]
+#![feature(map_in_place)]
+#![feature(num_bits_bytes)]
+#![feature(path_ext)]
+#![feature(quote)]
+#![feature(range_inclusive)]
+#![feature(ref_slice)]
 #![feature(rustc_diagnostic_macros)]
-#![feature(import_shadowing)]
+#![feature(rustc_private)]
+#![feature(scoped_tls)]
+#![feature(slice_bytes)]
+#![feature(slice_extras)]
+#![feature(slice_patterns)]
+#![feature(slice_position_elem)]
+#![feature(staged_api)]
+#![feature(str_char)]
+#![feature(str_match_indices)]
+#![feature(vec_push_all)]
+#![feature(wrapping)]
+#![feature(cell_extras)]
+#![feature(page_size)]
+#![cfg_attr(test, feature(test))]
+
+#![allow(trivial_casts)]
 
 extern crate arena;
-extern crate debug;
 extern crate flate;
+extern crate fmt_macros;
 extern crate getopts;
 extern crate graphviz;
 extern crate libc;
-extern crate "rustc_llvm" as llvm;
-extern crate "rustc_back" as rustc_back;
+extern crate rustc_llvm;
+extern crate rustc_back;
+extern crate rustc_data_structures;
 extern crate serialize;
 extern crate rbml;
-extern crate time;
-#[phase(plugin, link)] extern crate log;
-#[phase(plugin, link)] extern crate syntax;
+extern crate collections;
+#[macro_use] extern crate log;
+#[macro_use] extern crate syntax;
+#[macro_use] #[no_link] extern crate rustc_bitflags;
+
+extern crate serialize as rustc_serialize; // used by deriving
 
 #[cfg(test)]
 extern crate test;
 
-mod diagnostics;
+pub use rustc_llvm as llvm;
+
+#[macro_use]
+mod macros;
+
+// NB: This module needs to be declared first so diagnostics are
+// registered before they are used.
+pub mod diagnostics;
 
 pub mod back {
     pub use rustc_back::abi;
@@ -66,20 +108,20 @@ pub mod back {
     pub use rustc_back::target_strs;
     pub use rustc_back::x86;
     pub use rustc_back::x86_64;
-
-    pub mod link;
-    pub mod lto;
-
 }
 
+pub mod ast_map;
+
 pub mod middle {
+    pub mod astconv_util;
     pub mod astencode;
-    pub mod borrowck;
+    pub mod cast;
     pub mod cfg;
     pub mod check_const;
+    pub mod check_static_recursion;
     pub mod check_loop;
     pub mod check_match;
-    pub mod check_static;
+    pub mod check_rvalues;
     pub mod const_eval;
     pub mod dataflow;
     pub mod dead;
@@ -88,10 +130,11 @@ pub mod middle {
     pub mod effect;
     pub mod entry;
     pub mod expr_use_visitor;
-    pub mod freevars;
-    pub mod graph;
+    pub mod fast_reject;
+    pub mod free_region;
     pub mod intrinsicck;
-    pub mod kind;
+    pub mod infer;
+    pub mod implicator;
     pub mod lang_items;
     pub mod liveness;
     pub mod mem_categorization;
@@ -99,50 +142,41 @@ pub mod middle {
     pub mod privacy;
     pub mod reachable;
     pub mod region;
-    pub mod resolve;
+    pub mod recursion_limit;
     pub mod resolve_lifetime;
-    pub mod save;
     pub mod stability;
     pub mod subst;
-    pub mod trans;
+    pub mod traits;
     pub mod ty;
     pub mod ty_fold;
-    pub mod typeck;
+    pub mod ty_match;
+    pub mod ty_relate;
+    pub mod ty_walk;
     pub mod weak_lang_items;
-}
-
-pub mod front {
-    pub mod config;
-    pub mod test;
-    pub mod std_inject;
-    pub mod assign_node_ids_and_map;
-    pub mod feature_gate;
-    pub mod show_span;
 }
 
 pub mod metadata;
 
-pub mod driver;
+pub mod session;
 
 pub mod plugin;
 
 pub mod lint;
 
 pub mod util {
-    pub use rustc_back::fs;
     pub use rustc_back::sha2;
 
     pub mod common;
     pub mod ppaux;
     pub mod nodemap;
-    pub mod snapshot_vec;
+    pub mod lev_distance;
+    pub mod num;
+    pub mod fs;
 }
 
 pub mod lib {
     pub use llvm;
 }
-
-__build_diagnostic_array!(DIAGNOSTICS)
 
 // A private module so that macro-expanded idents like
 // `::rustc::lint::Lint` will also work in `rustc` itself.
@@ -153,7 +187,5 @@ mod rustc {
     pub use lint;
 }
 
-pub fn main() {
-    let args = std::os::args();
-    std::os::set_exit_status(driver::main_args(args.as_slice()));
-}
+// Build the diagnostics array at the end so that the metadata includes error use sites.
+__build_diagnostic_array! { librustc, DIAGNOSTICS }

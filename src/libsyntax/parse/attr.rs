@@ -13,20 +13,17 @@ use ast;
 use codemap::{spanned, Spanned, mk_sp, Span};
 use parse::common::*; //resolve bug?
 use parse::token;
-use parse::parser::Parser;
-use parse::token::INTERPOLATED;
-
-use std::gc::{Gc, GC};
+use parse::parser::{Parser, TokenType};
+use ptr::P;
 
 /// A parser that can parse attributes.
 pub trait ParserAttr {
     fn parse_outer_attributes(&mut self) -> Vec<ast::Attribute>;
+    fn parse_inner_attributes(&mut self) -> Vec<ast::Attribute>;
     fn parse_attribute(&mut self, permit_inner: bool) -> ast::Attribute;
-    fn parse_inner_attrs_and_next(&mut self)
-                                  -> (Vec<ast::Attribute>, Vec<ast::Attribute>);
-    fn parse_meta_item(&mut self) -> Gc<ast::MetaItem>;
-    fn parse_meta_seq(&mut self) -> Vec<Gc<ast::MetaItem>>;
-    fn parse_optional_meta(&mut self) -> Vec<Gc<ast::MetaItem>>;
+    fn parse_meta_item(&mut self) -> P<ast::MetaItem>;
+    fn parse_meta_seq(&mut self) -> Vec<P<ast::MetaItem>>;
+    fn parse_optional_meta(&mut self) -> Vec<P<ast::MetaItem>>;
 }
 
 impl<'a> ParserAttr for Parser<'a> {
@@ -34,13 +31,13 @@ impl<'a> ParserAttr for Parser<'a> {
     fn parse_outer_attributes(&mut self) -> Vec<ast::Attribute> {
         let mut attrs: Vec<ast::Attribute> = Vec::new();
         loop {
-            debug!("parse_outer_attributes: self.token={}",
+            debug!("parse_outer_attributes: self.token={:?}",
                    self.token);
             match self.token {
-              token::POUND => {
+              token::Pound => {
                 attrs.push(self.parse_attribute(false));
               }
-              token::DOC_COMMENT(s) => {
+              token::DocComment(s) => {
                 let attr = ::attr::mk_sugared_doc_attr(
                     attr::mk_attr_id(),
                     self.id_to_interned_str(s.ident()),
@@ -48,10 +45,10 @@ impl<'a> ParserAttr for Parser<'a> {
                     self.span.hi
                 );
                 if attr.node.style != ast::AttrOuter {
-                  self.fatal("expected outer comment");
+                  panic!(self.fatal("expected outer comment"));
                 }
                 attrs.push(attr);
-                self.bump();
+                panictry!(self.bump());
               }
               _ => break
             }
@@ -67,39 +64,43 @@ impl<'a> ParserAttr for Parser<'a> {
         debug!("parse_attributes: permit_inner={:?} self.token={:?}",
                permit_inner, self.token);
         let (span, value, mut style) = match self.token {
-            token::POUND => {
+            token::Pound => {
                 let lo = self.span.lo;
-                self.bump();
+                panictry!(self.bump());
 
-                let style = if self.eat(&token::NOT) {
+                if permit_inner { self.expected_tokens.push(TokenType::Token(token::Not)); }
+                let style = if self.token == token::Not {
+                    panictry!(self.bump());
                     if !permit_inner {
                         let span = self.span;
                         self.span_err(span,
                                       "an inner attribute is not permitted in \
                                        this context");
+                        self.fileline_help(span,
+                                       "place inner attribute at the top of the module or block");
                     }
                     ast::AttrInner
                 } else {
                     ast::AttrOuter
                 };
 
-                self.expect(&token::LBRACKET);
+                panictry!(self.expect(&token::OpenDelim(token::Bracket)));
                 let meta_item = self.parse_meta_item();
                 let hi = self.span.hi;
-                self.expect(&token::RBRACKET);
+                panictry!(self.expect(&token::CloseDelim(token::Bracket)));
 
                 (mk_sp(lo, hi), meta_item, style)
             }
             _ => {
                 let token_str = self.this_token_to_string();
-                self.fatal(format!("expected `#`, found `{}`",
-                                   token_str).as_slice());
+                panic!(self.fatal(&format!("expected `#`, found `{}`", token_str)));
             }
         };
 
-        if permit_inner && self.eat(&token::SEMI) {
+        if permit_inner && self.token == token::Semi {
+            panictry!(self.bump());
             self.span_warn(span, "this inner attribute syntax is deprecated. \
-                           The new syntax is `#![foo]`, with a bang and no semicolon.");
+                           The new syntax is `#![foo]`, with a bang and no semicolon");
             style = ast::AttrInner;
         }
 
@@ -116,66 +117,68 @@ impl<'a> ParserAttr for Parser<'a> {
 
     /// Parse attributes that appear after the opening of an item. These should
     /// be preceded by an exclamation mark, but we accept and warn about one
-    /// terminated by a semicolon. In addition to a vector of inner attributes,
-    /// this function also returns a vector that may contain the first outer
-    /// attribute of the next item (since we can't know whether the attribute
-    /// is an inner attribute of the containing item or an outer attribute of
-    /// the first contained item until we see the semi).
+    /// terminated by a semicolon.
 
-    /// matches inner_attrs* outer_attr?
-    /// you can make the 'next' field an Option, but the result is going to be
-    /// more useful as a vector.
-    fn parse_inner_attrs_and_next(&mut self)
-                                  -> (Vec<ast::Attribute> , Vec<ast::Attribute> ) {
-        let mut inner_attrs: Vec<ast::Attribute> = Vec::new();
-        let mut next_outer_attrs: Vec<ast::Attribute> = Vec::new();
+    /// matches inner_attrs*
+    fn parse_inner_attributes(&mut self) -> Vec<ast::Attribute> {
+        let mut attrs: Vec<ast::Attribute> = vec![];
         loop {
-            let attr = match self.token {
-                token::POUND => {
-                    self.parse_attribute(true)
+            match self.token {
+                token::Pound => {
+                    // Don't even try to parse if it's not an inner attribute.
+                    if !self.look_ahead(1, |t| t == &token::Not) {
+                        break;
+                    }
+
+                    let attr = self.parse_attribute(true);
+                    assert!(attr.node.style == ast::AttrInner);
+                    attrs.push(attr);
                 }
-                token::DOC_COMMENT(s) => {
+                token::DocComment(s) => {
                     // we need to get the position of this token before we bump.
                     let Span { lo, hi, .. } = self.span;
-                    self.bump();
-                    attr::mk_sugared_doc_attr(attr::mk_attr_id(),
-                                              self.id_to_interned_str(s.ident()),
-                                              lo,
-                                              hi)
+                    let attr = attr::mk_sugared_doc_attr(attr::mk_attr_id(),
+                                                         self.id_to_interned_str(s.ident()),
+                                                         lo, hi);
+                    if attr.node.style == ast::AttrInner {
+                        attrs.push(attr);
+                        panictry!(self.bump());
+                    } else {
+                        break;
+                    }
                 }
-                _ => {
-                    break;
-                }
-            };
-            if attr.node.style == ast::AttrInner {
-                inner_attrs.push(attr);
-            } else {
-                next_outer_attrs.push(attr);
-                break;
+                _ => break
             }
         }
-        (inner_attrs, next_outer_attrs)
+        attrs
     }
 
     /// matches meta_item = IDENT
     /// | IDENT = lit
     /// | IDENT meta_seq
-    fn parse_meta_item(&mut self) -> Gc<ast::MetaItem> {
-        match self.token {
-            token::INTERPOLATED(token::NtMeta(e)) => {
-                self.bump();
-                return e
+    fn parse_meta_item(&mut self) -> P<ast::MetaItem> {
+        let nt_meta = match self.token {
+            token::Interpolated(token::NtMeta(ref e)) => {
+                Some(e.clone())
             }
-            _ => {}
+            _ => None
+        };
+
+        match nt_meta {
+            Some(meta) => {
+                panictry!(self.bump());
+                return meta;
+            }
+            None => {}
         }
 
         let lo = self.span.lo;
-        let ident = self.parse_ident();
+        let ident = panictry!(self.parse_ident());
         let name = self.id_to_interned_str(ident);
         match self.token {
-            token::EQ => {
-                self.bump();
-                let lit = self.parse_lit();
+            token::Eq => {
+                panictry!(self.bump());
+                let lit = panictry!(self.parse_lit());
                 // FIXME #623 Non-string meta items are not serialized correctly;
                 // just forbid them for now
                 match lit.node {
@@ -187,31 +190,31 @@ impl<'a> ParserAttr for Parser<'a> {
                     }
                 }
                 let hi = self.span.hi;
-                box(GC) spanned(lo, hi, ast::MetaNameValue(name, lit))
+                P(spanned(lo, hi, ast::MetaNameValue(name, lit)))
             }
-            token::LPAREN => {
+            token::OpenDelim(token::Paren) => {
                 let inner_items = self.parse_meta_seq();
                 let hi = self.span.hi;
-                box(GC) spanned(lo, hi, ast::MetaList(name, inner_items))
+                P(spanned(lo, hi, ast::MetaList(name, inner_items)))
             }
             _ => {
                 let hi = self.last_span.hi;
-                box(GC) spanned(lo, hi, ast::MetaWord(name))
+                P(spanned(lo, hi, ast::MetaWord(name)))
             }
         }
     }
 
     /// matches meta_seq = ( COMMASEP(meta_item) )
-    fn parse_meta_seq(&mut self) -> Vec<Gc<ast::MetaItem>> {
-        self.parse_seq(&token::LPAREN,
-                       &token::RPAREN,
-                       seq_sep_trailing_disallowed(token::COMMA),
-                       |p| p.parse_meta_item()).node
+    fn parse_meta_seq(&mut self) -> Vec<P<ast::MetaItem>> {
+        panictry!(self.parse_seq(&token::OpenDelim(token::Paren),
+                       &token::CloseDelim(token::Paren),
+                       seq_sep_trailing_allowed(token::Comma),
+                       |p| Ok(p.parse_meta_item()))).node
     }
 
-    fn parse_optional_meta(&mut self) -> Vec<Gc<ast::MetaItem>> {
+    fn parse_optional_meta(&mut self) -> Vec<P<ast::MetaItem>> {
         match self.token {
-            token::LPAREN => self.parse_meta_seq(),
+            token::OpenDelim(token::Paren) => self.parse_meta_seq(),
             _ => Vec::new()
         }
     }

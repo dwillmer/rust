@@ -1,4 +1,4 @@
-# Copyright 2014 The Rust Project Developers. See the COPYRIGHT
+# Copyright 2014-2015 The Rust Project Developers. See the COPYRIGHT
 # file at the top-level directory of this distribution and at
 # http://rust-lang.org/COPYRIGHT.
 #
@@ -13,25 +13,48 @@
 ######################################################################
 
 # The version number
-CFG_RELEASE_NUM=0.12.0
-CFG_RELEASE_LABEL=-pre
+CFG_RELEASE_NUM=1.3.0
 
-CFG_FILENAME_EXTRA=4e7c5e5c
+# An optional number to put after the label, e.g. '.2' -> '-beta.2'
+# NB Make sure it starts with a dot to conform to semver pre-release
+# versions (section 9)
+CFG_PRERELEASE_VERSION=.1
 
-ifndef CFG_ENABLE_NIGHTLY
-# This is the normal version string
-CFG_RELEASE=$(CFG_RELEASE_NUM)$(CFG_RELEASE_LABEL)
-CFG_PACKAGE_VERS=$(CFG_RELEASE)
-else
-# Modify the version label for nightly builds
-CFG_RELEASE=$(CFG_RELEASE_NUM)$(CFG_RELEASE_LABEL)-nightly
-# When building nightly distributables just reuse the same "rust-nightly" name
-# so when we upload we'll always override the previous nighly. This doesn't actually
-# impact the version reported by rustc - it's just for file naming.
+# Append a version-dependent hash to each library, so we can install different
+# versions in the same place
+CFG_FILENAME_EXTRA=$(shell printf '%s' $(CFG_RELEASE) | $(CFG_HASH_COMMAND))
+
+ifeq ($(CFG_RELEASE_CHANNEL),stable)
+# This is the normal semver version string, e.g. "0.12.0", "0.12.0-nightly"
+CFG_RELEASE=$(CFG_RELEASE_NUM)
+# This is the string used in dist artifact file names, e.g. "0.12.0", "nightly"
+CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)
+CFG_DISABLE_UNSTABLE_FEATURES=1
+endif
+ifeq ($(CFG_RELEASE_CHANNEL),beta)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-beta$(CFG_PRERELEASE_VERSION)
+# When building beta distributables just reuse the same "beta" name
+# so when we upload we'll always override the previous beta. This
+# doesn't actually impact the version reported by rustc - it's just
+# for file naming.
+CFG_PACKAGE_VERS=beta
+CFG_DISABLE_UNSTABLE_FEATURES=1
+endif
+ifeq ($(CFG_RELEASE_CHANNEL),nightly)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-nightly
+# When building nightly distributables just reuse the same "nightly" name
+# so when we upload we'll always override the previous nighly. This
+# doesn't actually impact the version reported by rustc - it's just
+# for file naming.
 CFG_PACKAGE_VERS=nightly
 endif
+ifeq ($(CFG_RELEASE_CHANNEL),dev)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-dev
+CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)-dev
+endif
+
 # The name of the package to use for creating tarballs, installers etc.
-CFG_PACKAGE_NAME=rust-$(CFG_PACKAGE_VERS)
+CFG_PACKAGE_NAME=rustc-$(CFG_PACKAGE_VERS)
 
 # The version string plus commit information - this is what rustc reports
 CFG_VERSION = $(CFG_RELEASE)
@@ -42,9 +65,9 @@ CFG_GIT_DIR := $(CFG_SRC_DIR).git
 # so we use a hack: define $(SPACE) which contains space character.
 SPACE :=
 SPACE +=
-ifneq ($(wildcard $(subst $(SPACE),\$(SPACE),$(CFG_GIT))),)
+ifneq ($(CFG_GIT),)
 ifneq ($(wildcard $(subst $(SPACE),\$(SPACE),$(CFG_GIT_DIR))),)
-    CFG_VER_DATE = $(shell git --git-dir='$(CFG_GIT_DIR)' log -1 --pretty=format:'%ci')
+    CFG_VER_DATE = $(shell git --git-dir='$(CFG_GIT_DIR)' log -1 --date=short --pretty=format:'%cd')
     CFG_VER_HASH = $(shell git --git-dir='$(CFG_GIT_DIR)' rev-parse HEAD)
     CFG_SHORT_VER_HASH = $(shell git --git-dir='$(CFG_GIT_DIR)' rev-parse --short=9 HEAD)
     CFG_VERSION += ($(CFG_SHORT_VER_HASH) $(CFG_VER_DATE))
@@ -55,14 +78,11 @@ endif
 # numbers and dots here
 CFG_VERSION_WIN = $(CFG_RELEASE_NUM)
 
+CFG_INFO := $(info cfg: version $(CFG_VERSION))
 
 ######################################################################
 # More configuration
 ######################################################################
-
-# We track all of the object files we might build so that we can find
-# and include all of the .d files in one fell swoop.
-ALL_OBJ_FILES :=
 
 MKFILE_DEPS := config.stamp $(call rwildcard,$(CFG_SRC_DIR)mk/,*)
 MKFILES_FOR_TARBALL:=$(MKFILE_DEPS)
@@ -91,21 +111,28 @@ CFG_RUSTC_FLAGS := $(RUSTFLAGS)
 CFG_GCCISH_CFLAGS :=
 CFG_GCCISH_LINK_FLAGS :=
 
+# Turn off broken quarantine (see jemalloc/jemalloc#161)
+CFG_JEMALLOC_FLAGS := --disable-fill
+
 ifdef CFG_DISABLE_OPTIMIZE
   $(info cfg: disabling rustc optimization (CFG_DISABLE_OPTIMIZE))
   CFG_RUSTC_FLAGS +=
+  CFG_JEMALLOC_FLAGS += --enable-debug
 else
   # The rtopt cfg turns off runtime sanity checks
   CFG_RUSTC_FLAGS += -O --cfg rtopt
 endif
 
-ifdef CFG_DISABLE_DEBUG
-  CFG_RUSTC_FLAGS += --cfg ndebug
-  CFG_GCCISH_CFLAGS += -DRUST_NDEBUG
-else
-  $(info cfg: enabling more debugging (CFG_ENABLE_DEBUG))
-  CFG_RUSTC_FLAGS += --cfg debug
-  CFG_GCCISH_CFLAGS += -DRUST_DEBUG
+CFG_JEMALLOC_FLAGS += $(JEMALLOC_FLAGS)
+
+ifdef CFG_ENABLE_DEBUG_ASSERTIONS
+  $(info cfg: enabling debug assertions (CFG_ENABLE_DEBUG_ASSERTIONS))
+  CFG_RUSTC_FLAGS += -C debug-assertions=on
+endif
+
+ifdef CFG_ENABLE_DEBUGINFO
+  $(info cfg: enabling debuginfo (CFG_ENABLE_DEBUGINFO))
+  CFG_RUSTC_FLAGS += -g
 endif
 
 ifdef SAVE_TEMPS
@@ -132,12 +159,14 @@ endif
 # libraries, so in the interest of space, prefer dynamic linking throughout the
 # compilation process.
 #
-# Note though that these flags are omitted for stage2+. This means that the
-# snapshot will be generated with a statically linked rustc so we only have to
-# worry about the distribution of one file (with its native dynamic
+# Note though that these flags are omitted for the *bins* in stage2+. This means
+# that the snapshot will be generated with a statically linked rustc so we only
+# have to worry about the distribution of one file (with its native dynamic
 # dependencies)
 RUSTFLAGS_STAGE0 += -C prefer-dynamic
 RUSTFLAGS_STAGE1 += -C prefer-dynamic
+RUST_LIB_FLAGS_ST2 += -C prefer-dynamic
+RUST_LIB_FLAGS_ST3 += -C prefer-dynamic
 
 # Landing pads require a lot of codegen. We can get through bootstrapping faster
 # by not emitting them.
@@ -153,26 +182,35 @@ else
   CFG_VALGRIND_COMPILE :=
 endif
 
+
+ifndef CFG_DISABLE_VALGRIND_RPASS
+  $(info cfg: enabling valgrind run-pass tests (CFG_ENABLE_VALGRIND_RPASS))
+  $(info cfg: valgrind-rpass command set to $(CFG_VALGRIND))
+  CFG_VALGRIND_RPASS :=$(CFG_VALGRIND)
+else
+  $(info cfg: disabling valgrind run-pass tests)
+  CFG_VALGRIND_RPASS :=
+endif
+
+
 ifdef CFG_ENABLE_VALGRIND
   $(info cfg: enabling valgrind (CFG_ENABLE_VALGRIND))
 else
   CFG_VALGRIND :=
 endif
-ifdef CFG_BAD_VALGRIND
-  $(info cfg: disabling valgrind due to its unreliability on this platform)
-  CFG_VALGRIND :=
-endif
-
 
 ######################################################################
 # Target-and-rule "utility variables"
 ######################################################################
 
-define DEF_X
+define DEF_FOR_TARGET
 X_$(1) := $(CFG_EXE_SUFFIX_$(1))
+ifndef CFG_LLVM_TARGET_$(1)
+CFG_LLVM_TARGET_$(1) := $(1)
+endif
 endef
 $(foreach target,$(CFG_TARGET), \
-  $(eval $(call DEF_X,$(target))))
+  $(eval $(call DEF_FOR_TARGET,$(target))))
 
 # "Source" files we generate in builddir along the way.
 GENERATED :=
@@ -232,7 +270,7 @@ endif
 ######################################################################
 
 # FIXME: x86-ism
-LLVM_COMPONENTS=x86 arm mips ipo bitreader bitwriter linker asmparser jit mcjit \
+LLVM_COMPONENTS=x86 arm aarch64 mips powerpc ipo bitreader bitwriter linker asmparser mcjit \
                 interpreter instrumentation
 
 # Only build these LLVM tools
@@ -251,15 +289,20 @@ endif
 # Any rules that depend on LLVM should depend on LLVM_CONFIG
 LLVM_CONFIG_$(1):=$$(CFG_LLVM_INST_DIR_$(1))/bin/llvm-config$$(X_$(1))
 LLVM_MC_$(1):=$$(CFG_LLVM_INST_DIR_$(1))/bin/llvm-mc$$(X_$(1))
+LLVM_AR_$(1):=$$(CFG_LLVM_INST_DIR_$(1))/bin/llvm-ar$$(X_$(1))
 LLVM_VERSION_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --version)
 LLVM_BINDIR_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --bindir)
 LLVM_INCDIR_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --includedir)
 LLVM_LIBDIR_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --libdir)
-LLVM_LIBS_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --libs $$(LLVM_COMPONENTS))
+LLVM_LIBDIR_RUSTFLAGS_$(1)=-L "$$(LLVM_LIBDIR_$(1))"
 LLVM_LDFLAGS_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --ldflags)
+ifeq ($$(findstring freebsd,$(1)),freebsd)
 # On FreeBSD, it may search wrong headers (that are for pre-installed LLVM),
 # so we replace -I with -iquote to ensure that it searches bundled LLVM first.
 LLVM_CXXFLAGS_$(1)=$$(subst -I, -iquote , $$(shell "$$(LLVM_CONFIG_$(1))" --cxxflags))
+else
+LLVM_CXXFLAGS_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --cxxflags)
+endif
 LLVM_HOST_TRIPLE_$(1)=$$(shell "$$(LLVM_CONFIG_$(1))" --host-target)
 
 LLVM_AS_$(1)=$$(CFG_LLVM_INST_DIR_$(1))/bin/llvm-as$$(X_$(1))
@@ -278,6 +321,7 @@ $(foreach host,$(CFG_HOST), \
 # exported
 
 export CFG_SRC_DIR
+export CFG_SRC_DIR_RELATIVE
 export CFG_BUILD_DIR
 ifdef CFG_VER_DATE
 export CFG_VER_DATE
@@ -290,16 +334,30 @@ export CFG_VERSION_WIN
 export CFG_RELEASE
 export CFG_PACKAGE_NAME
 export CFG_BUILD
+export CFG_RELEASE_CHANNEL
 export CFG_LLVM_ROOT
-export CFG_ENABLE_MINGW_CROSS
 export CFG_PREFIX
 export CFG_LIBDIR
 export CFG_LIBDIR_RELATIVE
 export CFG_DISABLE_INJECT_STD_VERSION
+ifdef CFG_DISABLE_UNSTABLE_FEATURES
+CFG_INFO := $(info cfg: disabling unstable features (CFG_DISABLE_UNSTABLE_FEATURES))
+# Turn on feature-staging
+export CFG_DISABLE_UNSTABLE_FEATURES
+# Subvert unstable feature lints to do the self-build
+export RUSTC_BOOTSTRAP_KEY:=$(CFG_BOOTSTRAP_KEY)
+endif
+export CFG_BOOTSTRAP_KEY
 
 ######################################################################
 # Per-stage targets and runner
 ######################################################################
+
+# Valid setting-strings are 'all', 'none', 'gdb', 'lldb'
+# This 'function' will determine which debugger scripts to copy based on a
+# target triple. See debuggers.mk for more information.
+TRIPLE_TO_DEBUGGER_SCRIPT_SETTING=\
+ $(if $(findstring windows,$(1)),none,$(if $(findstring darwin,$(1)),lldb,gdb))
 
 STAGES = 0 1 2 3
 
@@ -311,7 +369,15 @@ define SREQ
 # Destinations of artifacts for the host compiler
 HROOT$(1)_H_$(3) = $(3)/stage$(1)
 HBIN$(1)_H_$(3) = $$(HROOT$(1)_H_$(3))/bin
+ifeq ($$(CFG_WINDOWSY_$(3)),1)
 HLIB$(1)_H_$(3) = $$(HROOT$(1)_H_$(3))/$$(CFG_LIBDIR_RELATIVE)
+else
+ifeq ($(1),0)
+HLIB$(1)_H_$(3) = $$(HROOT$(1)_H_$(3))/lib
+else
+HLIB$(1)_H_$(3) = $$(HROOT$(1)_H_$(3))/$$(CFG_LIBDIR_RELATIVE)
+endif
+endif
 
 # Destinations of artifacts for target architectures
 TROOT$(1)_T_$(2)_H_$(3) = $$(HLIB$(1)_H_$(3))/rustlib/$(2)
@@ -324,21 +390,23 @@ HSREQ$(1)_H_$(3) = $$(HBIN$(1)_H_$(3))/rustc$$(X_$(3))
 else
 HSREQ$(1)_H_$(3) = \
 	$$(HBIN$(1)_H_$(3))/rustc$$(X_$(3)) \
-	$$(MKFILE_DEPS)
+	$$(MKFILE_DEPS) \
+	tmp/install-debugger-scripts$(1)_H_$(3)-$$(call TRIPLE_TO_DEBUGGER_SCRIPT_SETTING,$(3)).done
 endif
 
 # Prerequisites for using the stageN compiler to build target artifacts
 TSREQ$(1)_T_$(2)_H_$(3) = \
 	$$(HSREQ$(1)_H_$(3)) \
-	$$(TLIB$(1)_T_$(2)_H_$(3))/libmorestack.a \
-	$$(TLIB$(1)_T_$(2)_H_$(3))/libcompiler-rt.a
+	$$(foreach obj,$$(INSTALLED_OBJECTS_$(2)),\
+		$$(TLIB$(1)_T_$(2)_H_$(3))/$$(obj))
 
 # Prerequisites for a working stageN compiler and libraries, for a specific
 # target
 SREQ$(1)_T_$(2)_H_$(3) = \
 	$$(TSREQ$(1)_T_$(2)_H_$(3)) \
 	$$(foreach dep,$$(TARGET_CRATES), \
-	    $$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$$(dep))
+	    $$(TLIB$(1)_T_$(2)_H_$(3))/stamp.$$(dep)) \
+	tmp/install-debugger-scripts$(1)_T_$(2)_H_$(3)-$$(call TRIPLE_TO_DEBUGGER_SCRIPT_SETTING,$(2)).done
 
 # Prerequisites for a working stageN compiler and complete set of target
 # libraries

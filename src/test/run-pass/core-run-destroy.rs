@@ -15,124 +15,78 @@
 // memory, which makes for some *confusing* logs. That's why these are here
 // instead of in std.
 
-#![feature(macro_rules)]
 #![reexport_test_harness_main = "test_main"]
+#![feature(libc, std_misc, duration)]
 
 extern crate libc;
 
-extern crate native;
-extern crate green;
-extern crate rustuv;
-
-use std::io::{Process, Command};
+use std::process::{self, Command, Child, Output, Stdio};
+use std::str;
+use std::sync::mpsc::channel;
+use std::thread;
 use std::time::Duration;
 
-macro_rules! succeed( ($e:expr) => (
-    match $e { Ok(..) => {}, Err(e) => fail!("failure: {}", e) }
-) )
-
-macro_rules! iotest (
-    { fn $name:ident() $b:block $($a:attr)* } => (
-        mod $name {
-            #![allow(unused_imports)]
-
-            use std::io::timer;
-            use libc;
-            use std::str;
-            use std::io::process::Command;
-            use native;
-            use super::{sleeper, test_destroy_actually_kills};
-
-            fn f() $b
-
-            $($a)* #[test] fn green() { f() }
-            $($a)* #[test] fn native() {
-                use native;
-                let (tx, rx) = channel();
-                native::task::spawn(proc() { tx.send(f()) });
-                rx.recv();
-            }
-        }
-    )
-)
-
-#[cfg(test)] #[start]
-fn start(argc: int, argv: *const *const u8) -> int {
-    green::start(argc, argv, rustuv::event_loop, test_main)
+macro_rules! t {
+    ($e:expr) => (match $e { Ok(e) => e, Err(e) => panic!("error: {}", e) })
 }
 
-iotest!(fn test_destroy_once() {
+fn test_destroy_once() {
     let mut p = sleeper();
-    match p.signal_exit() {
+    match p.kill() {
         Ok(()) => {}
-        Err(e) => fail!("error: {}", e),
+        Err(e) => panic!("error: {}", e),
     }
-})
+}
 
 #[cfg(unix)]
-pub fn sleeper() -> Process {
+pub fn sleeper() -> Child {
     Command::new("sleep").arg("1000").spawn().unwrap()
 }
 #[cfg(windows)]
-pub fn sleeper() -> Process {
+pub fn sleeper() -> Child {
     // There's a `timeout` command on windows, but it doesn't like having
     // its output piped, so instead just ping ourselves a few times with
     // gaps in between so we're sure this process is alive for awhile
     Command::new("ping").arg("127.0.0.1").arg("-n").arg("1000").spawn().unwrap()
 }
 
-iotest!(fn test_destroy_twice() {
+fn test_destroy_twice() {
     let mut p = sleeper();
-    succeed!(p.signal_exit()); // this shouldnt crash...
-    let _ = p.signal_exit(); // ...and nor should this (and nor should the destructor)
-})
+    t!(p.kill()); // this shouldn't crash...
+    let _ = p.kill(); // ...and nor should this (and nor should the destructor)
+}
 
-pub fn test_destroy_actually_kills(force: bool) {
-    use std::io::process::{Command, ProcessOutput, ExitStatus, ExitSignal};
-    use std::io::timer;
-    use libc;
-    use std::str;
-
-    #[cfg(unix,not(target_os="android"))]
+#[test]
+fn test_destroy_actually_kills() {
+    #[cfg(all(unix,not(target_os="android")))]
     static BLOCK_COMMAND: &'static str = "cat";
 
-    #[cfg(unix,target_os="android")]
+    #[cfg(all(unix,target_os="android"))]
     static BLOCK_COMMAND: &'static str = "/system/bin/cat";
 
     #[cfg(windows)]
     static BLOCK_COMMAND: &'static str = "cmd";
 
     // this process will stay alive indefinitely trying to read from stdin
-    let mut p = Command::new(BLOCK_COMMAND).spawn().unwrap();
+    let mut p = Command::new(BLOCK_COMMAND)
+                        .stdin(Stdio::piped())
+                        .spawn().unwrap();
 
-    assert!(p.signal(0).is_ok());
-
-    if force {
-        p.signal_kill().unwrap();
-    } else {
-        p.signal_exit().unwrap();
-    }
+    p.kill().unwrap();
 
     // Don't let this test time out, this should be quick
-    let (tx, rx1) = channel();
-    let mut t = timer::Timer::new().unwrap();
-    let rx2 = t.oneshot(Duration::milliseconds(1000));
-    spawn(proc() {
-        select! {
-            () = rx2.recv() => unsafe { libc::exit(1) },
-            () = rx1.recv() => {}
+    let (tx, rx) = channel();
+    thread::spawn(move|| {
+        thread::sleep_ms(1000);
+        if rx.try_recv().is_err() {
+            process::exit(1);
         }
     });
-    match p.wait().unwrap() {
-        ExitStatus(..) => fail!("expected a signal"),
-        ExitSignal(..) => tx.send(()),
+    let code = p.wait().unwrap().code();
+    if cfg!(windows) {
+        assert!(code.is_some());
+    } else {
+        assert!(code.is_none());
     }
+    tx.send(());
 }
-
-iotest!(fn test_unforced_destroy_actually_kills() {
-    test_destroy_actually_kills(false);
-})
-
-iotest!(fn test_forced_destroy_actually_kills() {
-    test_destroy_actually_kills(true);
-})

@@ -8,14 +8,13 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
-use std::gc::GC;
+#![feature(box_syntax)]
 
 fn f<T:'static>(_: T) {}
 
 fn main() {
-    let x = box(GC) 3i;
+    let x: Box<_> = box 3;
     f(x);
-    let x = &3i; //~ ERROR borrowed value does not live long enough
+    let x = &3; //~ ERROR borrowed value does not live long enough
     f(x);
 }
